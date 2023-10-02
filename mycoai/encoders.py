@@ -1,6 +1,7 @@
 '''Contains data encoders that converts sequence/taxonomy strings to tensors.'''
 
 import torch
+import sklearn
 from . import utils
 
 IUPAC_ENCODING = {'A':[1,    0,    0,    0   ],
@@ -53,100 +54,82 @@ class TaxonEncoder:
         
     Attributes
     ----------
-    labels: list[str]
-        Translation table which label (index) corresponds to which taxon (value)
+    lvl_encoders: list[sklearn.preprocessing.LabelEncoder]
+        A label encoder per level
     inference_matrices: list[torch.Tensor]
         List of tensors to multiply lower-level Softmax probabilities with to 
-        infer higher level (denotes which higher level a label is part of)
-    taxon_encodings: list
-        Contains encodings for all data rows for which self.encode is called
-    current_tax: list[str]
-        Keeps track of current taxon, to know when to increment label iterator
-    current_lab: list[int]
-        Keeps track of current label (per level). 
-    '''
+        infer higher level (denotes which higher level a label is part of)'''
 
     def __init__(self, data):
-        self.labels = self.initialize_labels(data) # Translation table
+        self.lvl_encoders = self.initialize_labels(data)
         self.inference_matrices = self.initialize_inference_matrices() # Empty
-        # Iterators to keep track of label name and value
-        self.current_tax = ['', '', '', '', '', ''] 
-        self.current_lab = [-1, -1, -1, -1, -1, -1] 
         self.train = True
 
     def initialize_labels(self, data):
-        '''Creates translation list for which label (index) corresponds to which 
-        taxon (str), accounting for synonyms between different parent taxons.'''
-
-        labels = [[] for i in range(6)]
-        classes = data.groupby('phylum') # Yes, this is ugly but it is fastest
-        for t1, g1 in classes: # For name, group in groups
-            labels[0].append(t1) # Append name (label) to list
-            for t2, g2 in g1.groupby('class'): # Group on deeper level
-                labels[1].append(t2) # And repeat...
-                for t3, g3 in g2.groupby('order'):
-                    labels[2].append(t3)
-                    for t4, g4 in g3.groupby('family'):
-                        labels[3].append(t4)
-                        for t5, g5 in g4.groupby('genus'):
-                            labels[4].append(t5) # ... until species level
-                            for t6, g6 in g5.groupby('species'): 
-                                labels[5].append(t6)
-
-        for i in range(len(labels)): # Remove the unidentified label
-            labels[i] = ([label for label in labels[i] 
-                          if label != utils.UNKNOWN_STR])
-
-        return labels
+        '''Creates an encoder for each taxonomic level'''
+        lvl_encoders = []
+        for lvl in utils.LEVELS:
+            encoder = sklearn.preprocessing.LabelEncoder()
+            encoder.fit(data[data[lvl]!=utils.UNKNOWN_STR][lvl].unique())
+            lvl_encoders.append(encoder)
+        return lvl_encoders 
 
     def initialize_inference_matrices(self):
         '''Set emtpy (zero) inference matrices with correct sizes'''
 
         inference_matrices = []
         num_parents = 0 
-        for level in self.labels:
-            num_classes = len(level)
-            if num_parents > 0:
+        for level in self.lvl_encoders:
+            num_classes = len(level.classes_)
+            if num_parents > 0: 
                 inference_matrix = torch.zeros((num_classes, num_parents),
-                                               dtype=torch.float32) # TODO see whether we can story this as binary (bool) dtype!
+                                               dtype=torch.float32)
                 inference_matrix.to_sparse()
                 inference_matrix = inference_matrix.to(utils.DEVICE)
                 inference_matrices.append(inference_matrix)
             num_parents = num_classes
 
         return inference_matrices
-
+    
     def encode(self, data_row):
         '''Assigns integers to taxonomic level. When self.train==True: also 
-        build inference matrices, assuming this function is called for all data 
-        rows in alph. order, uses self.taxon/current_lab to keep track.'''
+        build inference matrices, assumes this method is called for all rows.'''
 
-        encoding = []
+        encoding = [] # Init
         for i in range(6): # Loop through levels
-            if self.train:
-                if data_row[utils.LEVELS[i]] == utils.UNKNOWN_STR:
-                    encoding.append(utils.UNKNOWN_INT) # = loss will ignore this
-                    continue
-                # Due to the alph. sorting, we can increment if we see new tax.
-                if data_row[utils.LEVELS[i]] != self.current_tax[i]:
-                    self.current_tax[i] = data_row[utils.LEVELS[i]] 
-                    self.current_lab[i] += 1 
-                # This is for debugging & testing purposes (proof that it works)
-                # if self.labels[i][self.current_lab[i]] != self.current_tax[i]:
-                #   raise RuntimeError("Inconsistency found in labels.")
-                if i > 0: # Set inference matrix to 1 at current class & parent
-                    self.inference_matrices[i-1][self.current_lab[i],
-                                                 self.current_lab[i-1]] = 1
-                encoding.append(self.current_lab[i])
-            else:
-                try: 
-                    label = self.labels[i].index(data_row[utils.LEVELS[i]])
-                except ValueError:
-                    label = utils.UNKNOWN_INT
-                encoding.append(label)
-    
+            lvl = utils.LEVELS[i] # Label unidentified classes correctly
+            if data_row[lvl] == utils.UNKNOWN_STR:
+                encoding.append(utils.UNKNOWN_INT)
+            else: # Use encoder to label known classes
+                try:
+                    encoding.append(self.lvl_encoders[i]
+                                        .transform([data_row[lvl]])[0])
+                except ValueError: # For classes in test data absent in training 
+                    encoding.append(utils.UNKNOWN_INT)
+            if self.train and i > 0: # For creating the inference matrices
+                m = self.inference_matrices[i-1]
+                parent, child = encoding[-2], encoding[-1]
+                if parent != utils.UNKNOWN_INT and child != utils.UNKNOWN_INT:
+                    m[child,parent] += 1 # Both known, add 1
+                elif parent != utils.UNKNOWN_INT and child == utils.UNKNOWN_INT:
+                    probs = 1/m.shape[0] # Only parent known, divide over childs
+                    m[:,parent] += probs
+                elif parent == utils.UNKNOWN_INT and child != utils.UNKNOWN_INT:
+                    probs = 1/m.shape[1] # Only child known, divide over parents
+                    m[child] += probs
+                else: # Both unknown, divide probabilities over entire matrix
+                    probs = 1 / (m.shape[0] * m.shape[1])
+                    self.inference_matrices[i-1] += probs
+        
         return encoding
+    
+    def decode(self, data_row):
+        '''TODO'''
 
-    def decode(self):
-        pass # TODO?
-
+    def finish_training(self):
+        '''Normalizes rows of inference matrices to obtain transition 
+        probabilities of going from child class to parent class.'''
+        for matrix in self.inference_matrices:
+            for i in range(matrix.shape[0]):
+                matrix[i] = matrix[i]/matrix[i].sum()
+        self.train = False

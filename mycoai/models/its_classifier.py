@@ -35,8 +35,9 @@ class ITSClassifier(torch.nn.Module):
         self.target_levels = self._get_target_level_indices(target_levels)
         self.dna_encoder = dna_encoder
         self.tax_encoder = tax_encoder 
-        self.classes = torch.tensor([len(self.tax_encoder.labels[i]) 
-                                     for i in self.target_levels])
+        self.classes = torch.tensor(
+            [len(self.tax_encoder.lvl_encoders[i].classes_) 
+             for i in self.target_levels])
         self.base_arch = base_arch
         self.dropout = torch.nn.Dropout(dropout)
         
