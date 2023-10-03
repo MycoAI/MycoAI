@@ -1,7 +1,10 @@
 '''Contains data encoders that converts sequence/taxonomy strings to tensors.'''
 
+import re
 import torch
 import sklearn
+import itertools
+import numpy as np
 from . import utils
 
 IUPAC_ENCODING = {'A':[1,    0,    0,    0   ],
@@ -26,6 +29,7 @@ class DNAEncoder:
     def __init__(self):
         pass
 
+
 class FourDimDNA(DNAEncoder):
     '''Encoding method for converting nucleotide bases into 4 channel arrays'''
 
@@ -36,11 +40,46 @@ class FourDimDNA(DNAEncoder):
         '''Encodes a single data row, returns list of four-channel encodings'''
 
         encoding = ([IUPAC_ENCODING[data_row['sequence'][i]]
-        for i in range(min(len(data_row['sequence']), self.max_length))])
+               for i in range(min(len(data_row['sequence']), self.max_length))])
         return encoding + [[0,0,0,0]]*(self.max_length-len(encoding)) # Padding
     
-    def decode(self):
-        pass # TODO?
+
+class KmerSequence(DNAEncoder):
+    '''TODO'''
+
+    def __init__(self, k=3, alphabet='ACGT', stride=None):
+        words = [''.join(word) for word in itertools.product(alphabet+'?', 
+                                                             repeat=k)]
+        self.map = {word:i for i, word in enumerate(words)}
+        self.stride = k if stride is None else stride
+        self.k = k
+
+    def encode(self, data_row):
+        '''TODO'''
+        data_row['sequence']
+
+
+class KmerSpectrum(DNAEncoder):
+    '''Encoding method, converts each sequence to a k-mer frequency spectrum'''
+
+    def __init__(self, k=4, alphabet='ACGT', normalize=True): 
+        words = [''.join(word) for word in itertools.product(alphabet+'?', 
+                                                             repeat=k)]
+        self.map = {word:i for i, word in enumerate(words)}
+        self.alphabet = alphabet
+        self.normalize = normalize
+        self.k = k
+
+    def encode(self, data_row):
+        '''Encodes a single data row, returns k-mer frequences'''
+        # Replace characters not in alphabet with unknown marking
+        seq = re.sub('[^' + self.alphabet + ']', '?', data_row['sequence'])
+        freqs = np.zeros(len(self.map)) # Initialize frequency vector
+        for i in range(len(seq)-self.k+1): # Count
+            freqs[self.map[seq[i:i+self.k]]] += 1
+        if self.normalize: # Normalize
+            freqs = freqs/freqs.sum()
+        return [list(freqs)] 
 
 
 class TaxonEncoder:

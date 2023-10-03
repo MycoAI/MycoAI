@@ -12,6 +12,7 @@ LEVELS = ['phylum', 'class', 'order', 'family', 'genus', 'species']
 UNKNOWN_STR = '?'
 UNKNOWN_INT = 9999999
 PRED_BATCH_SIZE = 1000
+MAX_PER_EPOCH = 500000
 
 if torch.cuda.is_available():
     DEVICE = torch.device('cuda')

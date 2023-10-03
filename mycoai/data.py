@@ -95,6 +95,7 @@ class Dataset(torch.utils.data.Dataset):
                 filtered = (self.taxonomies[:,lvl] # Filter for known entries
                             [self.taxonomies[:,lvl] != utils.UNKNOWN_INT])
                 sizes = torch.bincount(filtered, minlength=num_classes) # Count
+                sizes = sizes.to(utils.DEVICE)
                 loss = loss_function(weight=1/sizes, # Take reciprocal
                                      ignore_index=utils.UNKNOWN_INT)
             
@@ -118,6 +119,7 @@ class Dataset(torch.utils.data.Dataset):
                 # Then combine the distribution + 'unknown' samples
                 sizes = (((1-sampler.unknown_frac)*dist) +
                          (sampler.unknown_frac*add_random))
+                sizes = sizes.to(utils.DEVICE)
                 loss = loss_function(weight=1/sizes, # and take reciprocal
                                      ignore_index=utils.UNKNOWN_INT)
                 
@@ -151,7 +153,8 @@ class Dataset(torch.utils.data.Dataset):
                 sample_weights[i] = class_weights[entry]
         # print(sample_weights.sum()) # NOTE uncomment to verify sum(weights)=1
 
-        sampler = tud.WeightedRandomSampler(sample_weights,len(self.taxonomies))
+        n_samples = min(len(self.taxonomies), utils.MAX_PER_EPOCH)
+        sampler = tud.WeightedRandomSampler(sample_weights,n_samples)
         sampler.lvl = lvl
         sampler.unknown_frac = unknown_frac
         return sampler
@@ -205,7 +208,7 @@ class DataPrep:
         ----------
         dna_encoder: DNAEncoder | str
             Specifies the encoder used for generating the sequence tensor.
-            Can be an existing object, or one of ['4d', 'kmer'], which will 
+            Can be an existing object, or one of ['4d', 'spectral'], which will 
             initialize an encoder of that type  (default is '4d')
         tax_encoder: TaxonEncoder | str
             Specifies the encoder used for generating the taxonomies tensor.
@@ -222,10 +225,11 @@ class DataPrep:
             print("Encoding the data into network-readable format...")
 
         # Initialize encoding methods
-        dna_encs = {'4d':encoders.FourDimDNA}
+        dna_encs = {'4d':encoders.FourDimDNA,
+                    'spectral':encoders.KmerSpectrum}
         tax_encs = {'categorical':encoders.TaxonEncoder}
         if type(dna_encoder) == str:
-            dna_encoder = dna_encs[dna_encoder]() # NOTE this will likely need data as input in future (for kmer)
+            dna_encoder = dna_encs[dna_encoder]() 
         if type(tax_encoder) == str:
             tax_encoder = tax_encs[tax_encoder](self.data)
 
@@ -265,7 +269,8 @@ class DataPrep:
 
         # Convert to tensors and store
         sequences = torch.tensor(sequences, dtype=torch.float32)
-        sequences = torch.transpose(sequences, 1, 2)
+        if type(dna_encoder) == encoders.FourDimDNA:
+            sequences = torch.transpose(sequences, 1, 2)
         taxonomies = torch.tensor(taxonomies,dtype=torch.int64)
         data = Dataset(sequences, taxonomies, dna_encoder, tax_encoder)
 
