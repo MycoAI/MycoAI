@@ -13,6 +13,7 @@ UNKNOWN_STR = '?'
 UNKNOWN_INT = 9999999
 PRED_BATCH_SIZE = 1000
 MAX_PER_EPOCH = 500000
+TOKENS = {'MASK':0, 'CLS':1, 'SEP':2, 'PAD':3}
 
 if torch.cuda.is_available():
     DEVICE = torch.device('cuda')

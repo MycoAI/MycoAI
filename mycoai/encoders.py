@@ -29,46 +29,93 @@ class DNAEncoder:
     def __init__(self):
         pass
 
+    def encode(self, data_row):
+        raise RuntimeError('encode method not implemented for base class.')
+
 
 class FourDimDNA(DNAEncoder):
     '''Encoding method for converting nucleotide bases into 4 channel arrays'''
 
-    def __init__(self, max_length=1000):
-        self.max_length = max_length
+    def __init__(self, length=1000):
+        self.length = length
 
     def encode(self, data_row):
         '''Encodes a single data row, returns list of four-channel encodings'''
 
         encoding = ([IUPAC_ENCODING[data_row['sequence'][i]]
-               for i in range(min(len(data_row['sequence']), self.max_length))])
-        return encoding + [[0,0,0,0]]*(self.max_length-len(encoding)) # Padding
+               for i in range(min(len(data_row['sequence']), self.length))])
+        return encoding + [[0,0,0,0]]*(self.length-len(encoding)) # Padding
     
 
-class KmerSequence(DNAEncoder):
-    '''TODO'''
+class KmerEncoder(DNAEncoder):
+    '''Base clase for nucleotide encoders that are based on k-mers'''
 
-    def __init__(self, k=3, alphabet='ACGT', stride=None):
-        words = [''.join(word) for word in itertools.product(alphabet+'?', 
-                                                             repeat=k)]
-        self.map = {word:i for i, word in enumerate(words)}
-        self.stride = k if stride is None else stride
-        self.k = k
+    def __init__(self, k, alphabet): 
+        self.words = [''.join(word) for word in itertools.product(alphabet+'?', 
+                                                                  repeat=k)]
+        self.alphabet = alphabet
+        self.k = k 
+        
+    def _seq_preprocess(self, sequence):
+        '''Replaces uncertain nucleotides with "?", cuts seq. to fit k-mers'''
+        seq = re.sub('[^' + self.alphabet + ']', '?', sequence)
+        seq = seq[:int(len(seq)/self.k)*self.k]
+        return seq
+    
+
+class KmerTokenizer(KmerEncoder):
+    '''K-mer DNA encoding method that represents a k-mer as an index/token'''
+
+    def __init__(self, k=4, alphabet='ACGT', length=512):
+        super().__init__(k, alphabet)
+        self.length = length
+        min_token = len(utils.TOKENS)
+        self.map = {word:i+min_token for i, word in enumerate(self.words)}
 
     def encode(self, data_row):
-        '''TODO'''
-        data_row['sequence']
+        '''Encodes data row, returns list of (kmer-based) one-hot encodings'''
+        encoding = [utils.TOKENS['CLS']]
+        seq = self._seq_preprocess(data_row['sequence'])
+        for i in range(0,min((self.length-2)*self.k, len(seq)),self.k):
+            encoding.append(self.map[seq[i:i+self.k]]) # Add encoding
+        encoding.append(utils.TOKENS['SEP']) # Add separator token 
+        encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
+        return encoding
 
 
-class KmerSpectrum(DNAEncoder):
+class KmerOneHot(KmerEncoder):
+    '''K-mer DNA encoding method that represents a k-mer as one-hot vector'''
+
+    def __init__(self, k=3, alphabet='ACGT', length=512): 
+        super().__init__(k, alphabet)
+        self.length = length
+        min_token = len(utils.TOKENS)
+        self.map = {word:i+min_token for i, word in enumerate(self.words)}
+        self.num_tokens = len(self.map) + min_token
+
+    def encode(self, data_row):
+        '''Encodes data row, returns list of (kmer-based) one-hot encodings'''
+        encoding = [self._get_onehot_vector(utils.TOKENS['CLS'])] 
+        seq = self._seq_preprocess(data_row['sequence'])
+        for i in range(0,min((self.length-2)*self.k, len(seq)),self.k):
+            encoding.append(self._get_onehot_vector(self.map[seq[i:i+self.k]]))
+        encoding.append(self._get_onehot_vector(utils.TOKENS['SEP']))
+        encoding += (self.length-len(encoding))*[[0]*self.num_tokens]
+        return encoding
+
+    def _get_onehot_vector(self, index):
+        empty = [0]*(self.num_tokens)
+        empty[index] = 1
+        return empty
+    
+
+class KmerSpectrum(KmerEncoder):
     '''Encoding method, converts each sequence to a k-mer frequency spectrum'''
 
     def __init__(self, k=4, alphabet='ACGT', normalize=True): 
-        words = [''.join(word) for word in itertools.product(alphabet+'?', 
-                                                             repeat=k)]
-        self.map = {word:i for i, word in enumerate(words)}
-        self.alphabet = alphabet
+        super().__init__(k, alphabet)
+        self.map = {word:i for i, word in enumerate(self.words)}
         self.normalize = normalize
-        self.k = k
 
     def encode(self, data_row):
         '''Encodes a single data row, returns k-mer frequences'''
