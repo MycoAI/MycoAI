@@ -274,9 +274,6 @@ class DataPrep:
         sequences = torch.tensor(sequences, dtype=torch.float32)
         if type(dna_encoder) in [encoders.FourDimDNA, encoders.KmerOneHot]:
             sequences = torch.transpose(sequences, 1, 2)
-        print(sequences)
-        print(sequences.shape)
-        exit(0)
         taxonomies = torch.tensor(taxonomies,dtype=torch.int64)
         data = Dataset(sequences, taxonomies, dna_encoder, tax_encoder)
 

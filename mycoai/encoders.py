@@ -209,9 +209,14 @@ class TaxonEncoder:
         
         return encoding
     
-    def decode(self, data_row):
-        '''TODO'''
-
+    def decode(self, labels: np.ndarray):
+        '''Decodes an array of index labels into their corresponding strings'''
+        decoding = []
+        for i, encoder in enumerate(self.lvl_encoders):
+            decoding.append(encoder.inverse_transform(labels[:,i]))
+        decoding = np.stack(decoding,axis=1)
+        return decoding
+    
     def finish_training(self):
         '''Normalizes rows of inference matrices to obtain transition 
         probabilities of going from child class to parent class.'''

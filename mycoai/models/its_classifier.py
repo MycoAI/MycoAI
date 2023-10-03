@@ -2,6 +2,7 @@
 
 import torch
 import numpy as np
+import pandas as pd
 from .. import utils
 from .output_heads import SingleHead, MultiHead, ChainedMultiHead, Inference
 
@@ -113,4 +114,11 @@ class ITSClassifier(torch.nn.Module):
             else:
                 return predictions
         elif return_as == 'dataframe':
-            pass # TODO decode predictions into strings
+            classes = []
+            for i, prediction in enumerate(predictions):
+                pred_argmax = torch.argmax(prediction, dim=1).cpu().numpy()
+                classes.append(pred_argmax)
+            classes = np.stack(classes, axis=1)
+            decoding = self.tax_encoder.decode(classes)
+            return pd.DataFrame(decoding, columns=[utils.LEVELS[i] + '_pred'
+                                                   for i in self.target_levels])
