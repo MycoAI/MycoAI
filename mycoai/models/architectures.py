@@ -1,7 +1,7 @@
 '''Several architectures that handle ITS data. Must output a flat tensor.'''
 
 import torch
-from .transformer import Transformer
+from .transformers import BERT
 
 class SimpleCNN(torch.nn.Module):
     
@@ -26,6 +26,7 @@ class SimpleCNN(torch.nn.Module):
             x = layer(x)
         x = torch.flatten(x, 1)
         return x
+    
 
 class ResNet(torch.nn.Module):
     '''Adapted from: 
@@ -71,6 +72,7 @@ class ResNet(torch.nn.Module):
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         return x
+    
 
 class ResidualBlock(torch.nn.Module):
   '''Adapted from: 

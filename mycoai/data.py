@@ -271,10 +271,8 @@ class DataPrep:
             tax_encoder.finish_training()
 
         # Convert to tensors and store
-        sequences = torch.tensor(sequences, dtype=torch.float32)
-        if type(dna_encoder) in [encoders.FourDimDNA, encoders.KmerOneHot]:
-            sequences = torch.transpose(sequences, 1, 2)
-        taxonomies = torch.tensor(taxonomies,dtype=torch.int64)
+        sequences = torch.stack(sequences)
+        taxonomies = torch.stack(taxonomies)
         data = Dataset(sequences, taxonomies, dna_encoder, tax_encoder)
 
         return data

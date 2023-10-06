@@ -44,7 +44,8 @@ class FourDimDNA(DNAEncoder):
 
         encoding = ([IUPAC_ENCODING[data_row['sequence'][i]]
                for i in range(min(len(data_row['sequence']), self.length))])
-        return encoding + [[0,0,0,0]]*(self.length-len(encoding)) # Padding
+        encoding = encoding + [[0,0,0,0]]*(self.length-len(encoding)) # Padding
+        return torch.tensor(encoding, dtype=torch.float32).transpose(1,0)
     
 
 class KmerEncoder(DNAEncoder):
@@ -71,6 +72,7 @@ class KmerTokenizer(KmerEncoder):
         self.length = length
         min_token = len(utils.TOKENS)
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
+        self.vocab_size = len(self.map)
 
     def encode(self, data_row):
         '''Encodes data row, returns list of (kmer-based) one-hot encodings'''
@@ -80,7 +82,7 @@ class KmerTokenizer(KmerEncoder):
             encoding.append(self.map[seq[i:i+self.k]]) # Add encoding
         encoding.append(utils.TOKENS['SEP']) # Add separator token 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
-        return encoding
+        return torch.tensor(encoding, dtype=torch.int)
 
 
 class KmerOneHot(KmerEncoder):
@@ -91,7 +93,7 @@ class KmerOneHot(KmerEncoder):
         self.length = length
         min_token = len(utils.TOKENS)
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
-        self.num_tokens = len(self.map) + min_token
+        self.vocab_size = len(self.map) + min_token
 
     def encode(self, data_row):
         '''Encodes data row, returns list of (kmer-based) one-hot encodings'''
@@ -100,11 +102,11 @@ class KmerOneHot(KmerEncoder):
         for i in range(0,min((self.length-2)*self.k, len(seq)),self.k):
             encoding.append(self._get_onehot_vector(self.map[seq[i:i+self.k]]))
         encoding.append(self._get_onehot_vector(utils.TOKENS['SEP']))
-        encoding += (self.length-len(encoding))*[[0]*self.num_tokens]
-        return encoding
+        encoding += (self.length-len(encoding))*[[0]*self.vocab_size]
+        return torch.tensor(encoding, dtype=torch.float32).transpose(1,0)
 
     def _get_onehot_vector(self, index):
-        empty = [0]*(self.num_tokens)
+        empty = [0]*(self.vocab_size)
         empty[index] = 1
         return empty
     
@@ -119,14 +121,13 @@ class KmerSpectrum(KmerEncoder):
 
     def encode(self, data_row):
         '''Encodes a single data row, returns k-mer frequences'''
-        # Replace characters not in alphabet with unknown marking
-        seq = re.sub('[^' + self.alphabet + ']', '?', data_row['sequence'])
+        seq = self._seq_preprocess(data_row['sequence'])
         freqs = np.zeros(len(self.map)) # Initialize frequency vector
         for i in range(len(seq)-self.k+1): # Count
             freqs[self.map[seq[i:i+self.k]]] += 1
         if self.normalize: # Normalize
             freqs = freqs/freqs.sum()
-        return [list(freqs)] 
+        return torch.tensor([list(freqs)], dtype=torch.float32) 
 
 
 class TaxonEncoder:
@@ -207,7 +208,7 @@ class TaxonEncoder:
                     probs = 1 / (m.shape[0] * m.shape[1])
                     self.inference_matrices[i-1] += probs
         
-        return encoding
+        return torch.tensor(encoding, dtype=torch.int64)
     
     def decode(self, labels: np.ndarray):
         '''Decodes an array of index labels into their corresponding strings'''

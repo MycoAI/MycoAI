@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from .. import utils
 from .output_heads import SingleHead, MultiHead, ChainedMultiHead, Inference
+from .transformers import BERT
 
 class ITSClassifier(torch.nn.Module): 
     '''Fungal taxonomic classification model based on ITS sequences. 
@@ -42,6 +43,9 @@ class ITSClassifier(torch.nn.Module):
         self.base_arch = base_arch
         self.dropout = torch.nn.Dropout(dropout)
         
+        if type(self.base_arch) == BERT:
+            self.base_arch.set_mode('classification')
+
         # The fully connected part
         fcn = []
         for i in range(len(fcn_layers)):
