@@ -209,8 +209,8 @@ class DataPrep:
         dna_encoder: DNAEncoder | str
             Specifies the encoder used for generating the sequence tensor.
             Can be an existing object, or one of ['4d', 'kmer-tokens', 
-            'kmer-onehot', 'kmer-spectral'], which will initialize an encoder 
-            of that type  (default is '4d')
+            'kmer-onehot', 'kmer-spectral', 'bpe'], which will initialize an 
+            encoder of that type  (default is '4d')
         tax_encoder: TaxonEncoder | str
             Specifies the encoder used for generating the taxonomies tensor.
             Can be an existing object, or 'categorical', which will 
@@ -226,13 +226,17 @@ class DataPrep:
             print("Encoding the data into network-readable format...")
 
         # Initialize encoding methods
-        dna_encs = {'4d':               encoders.FourDimDNA,
-                    'kmer-tokens':      encoders.KmerTokenizer,
-                    'kmer-onehot':      encoders.KmerOneHot,
-                    'kmer-spectral':    encoders.KmerSpectrum}
-        tax_encs = {'categorical':      encoders.TaxonEncoder}
+        dna_encs = {'4d':            encoders.FourDimDNA,
+                    'kmer-tokens':   encoders.KmerTokenizer,
+                    'kmer-onehot':   encoders.KmerOneHot,
+                    'kmer-spectral': encoders.KmerSpectrum,
+                    'bpe':           encoders.BytePairEncoder}
+        tax_encs = {'categorical':   encoders.TaxonEncoder}
         if type(dna_encoder) == str:
-            dna_encoder = dna_encs[dna_encoder]() 
+            if dna_encoder == 'bpe':
+                dna_encoder = dna_encs[dna_encoder](self.data)
+            else:
+                dna_encoder = dna_encs[dna_encoder]() 
         if type(tax_encoder) == str:
             tax_encoder = tax_encs[tax_encoder](self.data)
 

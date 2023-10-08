@@ -1,11 +1,13 @@
 '''Contains data encoders that converts sequence/taxonomy strings to tensors.'''
 
+import io
 import re
 import math
 import torch
 import sklearn
 import itertools
 import numpy as np
+import sentencepiece as spm
 from . import utils
 
 IUPAC_ENCODING = {'A':[1,    0,    0,    0   ],
@@ -49,6 +51,37 @@ class FourDimDNA(DNAEncoder):
         return torch.tensor(encoding, dtype=torch.float32).transpose(1,0)
     
 
+class BytePairEncoder(DNAEncoder):
+    '''Tokenizer based on appearance frequency of base combinations'''
+
+    def __init__(self, data, length=512, vocab_size=256):
+        if utils.VERBOSE > 0:
+            print('Initializing Byte Pair Encoder...')
+        mem_stream = io.BytesIO() # In-memory byte stream to save model to
+        sequences = iter(data['sequence'].tolist()) # Sentence iterator object
+        spm.SentencePieceTrainer.train(sentence_iterator=sequences, 
+                                       vocab_size=vocab_size,
+                                       model_type='bpe',
+                                       model_writer=mem_stream,
+                                       bos_id = utils.TOKENS['CLS'],
+                                       eos_id = utils.TOKENS['SEP'],
+                                       pad_id = utils.TOKENS['PAD'],
+                                       unk_id = utils.TOKENS['UNK'],
+                                       control_symbols = ['MASK'],
+                                       character_coverage=1.0)
+        
+        self.sp = spm.SentencePieceProcessor(model_proto=mem_stream.getvalue())
+        self.length = length
+
+    def encode(self, data_row):
+        '''Encodes a single data row using the BPE encoder'''
+        seq = re.sub('[^ACTG]', '?', data_row['sequence'])
+        encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
+        encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']] 
+        encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
+        return torch.tensor(encoding, dtype=torch.int)
+    
+
 class KmerEncoder(DNAEncoder):
     '''Base clase for nucleotide encoders that are based on k-mers'''
 
@@ -78,7 +111,7 @@ class KmerTokenizer(KmerEncoder):
         self.vocab_size = len(self.map)
 
     def encode(self, data_row):
-        '''Encodes data row, returns list of (kmer-based) one-hot encodings'''
+        '''Encodes data row, returns tensor of (kmer-based) token encodings'''
         encoding = [utils.TOKENS['CLS']]
         seq = self._seq_preprocess(data_row['sequence'])
         i = 0
@@ -101,7 +134,7 @@ class KmerOneHot(KmerEncoder):
         self.vocab_size = len(self.map) + min_token
 
     def encode(self, data_row):
-        '''Encodes data row, returns list of (kmer-based) one-hot encodings'''
+        '''Encodes data row, returns tensor of (kmer-based) one-hot encodings'''
         encoding = [self._get_onehot_vector(utils.TOKENS['CLS'])] 
         seq = self._seq_preprocess(data_row['sequence'])
         i = 0
