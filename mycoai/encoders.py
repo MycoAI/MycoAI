@@ -1,6 +1,7 @@
 '''Contains data encoders that converts sequence/taxonomy strings to tensors.'''
 
 import re
+import math
 import torch
 import sklearn
 import itertools
@@ -51,24 +52,26 @@ class FourDimDNA(DNAEncoder):
 class KmerEncoder(DNAEncoder):
     '''Base clase for nucleotide encoders that are based on k-mers'''
 
-    def __init__(self, k, alphabet): 
+    def __init__(self, k, alphabet, overlapping): 
+        self.k = k 
+        self.alphabet = alphabet
+        self.stride = 1 if overlapping else k
         self.words = [''.join(word) for word in itertools.product(alphabet+'?', 
                                                                   repeat=k)]
-        self.alphabet = alphabet
-        self.k = k 
         
     def _seq_preprocess(self, sequence):
         '''Replaces uncertain nucleotides with "?", cuts seq. to fit k-mers'''
         seq = re.sub('[^' + self.alphabet + ']', '?', sequence)
-        seq = seq[:int(len(seq)/self.k)*self.k]
+        length = (int((len(seq) - self.k)/self.stride)*self.stride) + self.k
+        seq = seq[:length]
         return seq
     
 
 class KmerTokenizer(KmerEncoder):
     '''K-mer DNA encoding method that represents a k-mer as an index/token'''
 
-    def __init__(self, k=4, alphabet='ACGT', length=512):
-        super().__init__(k, alphabet)
+    def __init__(self, k=4, alphabet='ACGT', length=512, overlapping=False):
+        super().__init__(k, alphabet, overlapping)
         self.length = length
         min_token = len(utils.TOKENS)
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
@@ -78,8 +81,10 @@ class KmerTokenizer(KmerEncoder):
         '''Encodes data row, returns list of (kmer-based) one-hot encodings'''
         encoding = [utils.TOKENS['CLS']]
         seq = self._seq_preprocess(data_row['sequence'])
-        for i in range(0,min((self.length-2)*self.k, len(seq)),self.k):
+        i = 0
+        while i + self.k <= len(seq) and len(encoding) < self.length-1:
             encoding.append(self.map[seq[i:i+self.k]]) # Add encoding
+            i += self.stride
         encoding.append(utils.TOKENS['SEP']) # Add separator token 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.int)
@@ -88,8 +93,8 @@ class KmerTokenizer(KmerEncoder):
 class KmerOneHot(KmerEncoder):
     '''K-mer DNA encoding method that represents a k-mer as one-hot vector'''
 
-    def __init__(self, k=3, alphabet='ACGT', length=512): 
-        super().__init__(k, alphabet)
+    def __init__(self, k=3, alphabet='ACGT', length=512, overlapping=False): 
+        super().__init__(k, alphabet, overlapping)
         self.length = length
         min_token = len(utils.TOKENS)
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
@@ -99,8 +104,10 @@ class KmerOneHot(KmerEncoder):
         '''Encodes data row, returns list of (kmer-based) one-hot encodings'''
         encoding = [self._get_onehot_vector(utils.TOKENS['CLS'])] 
         seq = self._seq_preprocess(data_row['sequence'])
-        for i in range(0,min((self.length-2)*self.k, len(seq)),self.k):
+        i = 0
+        while i + self.k <= len(seq) and len(encoding) < self.length-1:
             encoding.append(self._get_onehot_vector(self.map[seq[i:i+self.k]]))
+            i += self.stride
         encoding.append(self._get_onehot_vector(utils.TOKENS['SEP']))
         encoding += (self.length-len(encoding))*[[0]*self.vocab_size]
         return torch.tensor(encoding, dtype=torch.float32).transpose(1,0)
@@ -114,8 +121,8 @@ class KmerOneHot(KmerEncoder):
 class KmerSpectrum(KmerEncoder):
     '''Encoding method, converts each sequence to a k-mer frequency spectrum'''
 
-    def __init__(self, k=4, alphabet='ACGT', normalize=True): 
-        super().__init__(k, alphabet)
+    def __init__(self, k=4, alphabet='ACGT', normalize=True, overlapping=True): 
+        super().__init__(k, alphabet, overlapping)
         self.map = {word:i for i, word in enumerate(self.words)}
         self.normalize = normalize
 
@@ -123,7 +130,7 @@ class KmerSpectrum(KmerEncoder):
         '''Encodes a single data row, returns k-mer frequences'''
         seq = self._seq_preprocess(data_row['sequence'])
         freqs = np.zeros(len(self.map)) # Initialize frequency vector
-        for i in range(len(seq)-self.k+1): # Count
+        for i in range(0, len(seq)-self.k+1, self.stride): # Count
             freqs[self.map[seq[i:i+self.k]]] += 1
         if self.normalize: # Normalize
             freqs = freqs/freqs.sum()
