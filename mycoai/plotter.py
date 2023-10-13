@@ -10,8 +10,8 @@ from . import utils, data
 def counts_barchart(dataprep, level='phylum', id=''):
     '''Plots the number of sequences per class'''
 
-    counts = dataprep.data.groupby(level, as_index=False)['sh'].count().sort_values(
-        'sh', ascending=False)
+    counts = dataprep.data.groupby(level, as_index=False)['id'].count().sort_values(
+        'id', ascending=False)
     ax = counts.plot.bar(ylabel='# sequences', legend=False)
     ax.set_xticklabels(counts[level])
     plt.savefig(utils.OUTPUT_DIR + level + '_counts_' + id + '.png')
@@ -39,7 +39,7 @@ def counts_sunburstplot(dataprep, id=''):
 
     print("Creating sunburst plot...")
     counts = dataprep.data.groupby(utils.LEVELS, as_index=False).count()
-    fig = px.sunburst(counts, path=utils.LEVELS, values='sh')
+    fig = px.sunburst(counts, path=utils.LEVELS, values='id')
     pio.write_image(fig, utils.OUTPUT_DIR + "sunburst_" + id + ".png", scale=4)
 
 def classification_loss(history, target_levels):
@@ -72,7 +72,7 @@ def confusion_matrices(model, data):
     '''Plots a confusion matrix for each predicted taxonomy level'''
     model.eval()
     with torch.no_grad():
-        y_pred, y = model.predict(data, return_labels=True) 
+        y_pred, y = model._predict(data, return_labels=True) 
         for i in range(len(y_pred)):
             argmax_y_pred = torch.argmax(y_pred[i].cpu(), dim=1)
             matrix = skmetric.confusion_matrix(y[:,i].cpu(), argmax_y_pred)

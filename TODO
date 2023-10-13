@@ -1,0 +1,27 @@
+PRIORITY
+Extract & remove test set from new unite release (and save the scripts to do this)
+Weights and biases
+Next sentence prediction
+Masked language modelling (learning rate schedule...?)
+
+LATER
+Dimensionality reduction and visualization
+Weights and biases
+Expand predict.py with much more features
+
+LAZY TASKS
+Doing some experiments
+Allow for loss curve when valid data is not available
+Allow for other curves than just loss on training data?
+Maybe print some of the results and mention that the 'full' are saved (instead of saving just everything.)
+Check (again) known/total comparison
+Ideally, you'd merge a dataframe prediction back to the original DataPrep object
+Do something about the lazylinear layers
+Apply for LISA (surf) server
+
+RANDOM IDEAS
+Add unusual bases to 'confident' classes as to make the model familiar with those
+Approach the problem as a 'machine translation' task
+Alternative weighted sampling methods (less extreme)
+Label smoothing?
+Sampling in next epoch based on performance in previous epoch

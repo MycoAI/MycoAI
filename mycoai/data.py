@@ -1,5 +1,6 @@
 '''Contains mycoai Dataset class and data preprocessing.'''
 
+import scipy
 import torch
 import random
 import pandas as pd
@@ -170,37 +171,46 @@ class DataPrep:
         'phylum', 'class', 'order', 'genus', 'family', 'species', and 'sequence'
     '''
 
-    def __init__(self, filename, parser='unite', allow_duplicates=False):
+    def __init__(self, filename, tax_parser='unite', allow_duplicates=False):
         '''Loads data into DataPrep object, using parser adjusted to data format
         
         Parameters
         ----------
         filename: str
-            Path of to-be-loaded file
-        parser: function | 'unite'
-            Function that parses input and outputs a dataframe (default is 
-            'unite') at least consisting of columns 'phylum', 'class', 'order', 
-            'genus', 'family', 'species', and 'sequence'. Rows of this dataframe 
-            should be of type str, uncertain labels should be given the value of 
-            `utils.UNKNOWN_STR`. 
+            Path of to-be-loaded file in FASTA format
+        tax_parser: function | 'unite'
+            Function that parses the FASTA headers and extracts the taxonomic 
+            labels on all six levels (from phylum to species). If None, no 
+            labels will be extracted. If 'unite', will follow the UNITE format.
+            Also supports user-custom functions, as long as they return a list
+            following the format: [id, phyl, clas, ord, fam, gen, spec]. 
         allow_duplicates: bool
             Drops duplicate entries if False (default is False)'''
         
-        parsers = {'unite':self.unite_parser}
-        parser = parser if type(parser) != str else parsers[parser]
-        data = parser(filename)
+        tax_parsers = {'unite':self.unite_parser}
+        if type(tax_parser) == str:
+            tax_parser = tax_parsers[tax_parser]
+        data = self.read_fasta(filename, tax_parser=tax_parser)
+
         if not allow_duplicates:
-            data.drop_duplicates(subset=['sequence', 'species'], inplace=True)
+            if tax_parser is not None:
+                data.drop_duplicates(subset=['sequence','species'],inplace=True)
+            else:
+                data.drop_duplicates(subset=['sequence'], inplace=True)
+
         self.data = data
+
         if utils.VERBOSE > 0:
             print(len(self.data), "samples loaded into dataframe.")
-            plotter.counts_barchart(self)
-            plotter.counts_boxplot(self)
+            if tax_parser is not None:
+                plotter.counts_barchart(self)
+                plotter.counts_boxplot(self)
             if utils.VERBOSE == 2:
                 self.length_report()
-                plotter.counts_sunburstplot(self) 
+                if tax_parser is not None:
+                    plotter.counts_sunburstplot(self) 
 
-    def encode_dataset(self, dna_encoder='4d',tax_encoder='categorical',
+    def encode_dataset(self, dna_encoder, tax_encoder='categorical',
                        valid_split=0.0, export_path=None):
         '''Converts data into a mycoai Dataset object
         
@@ -210,7 +220,7 @@ class DataPrep:
             Specifies the encoder used for generating the sequence tensor.
             Can be an existing object, or one of ['4d', 'kmer-tokens', 
             'kmer-onehot', 'kmer-spectral', 'bpe'], which will initialize an 
-            encoder of that type  (default is '4d')
+            encoder of that type 
         tax_encoder: TaxonEncoder | str
             Specifies the encoder used for generating the taxonomies tensor.
             Can be an existing object, or 'categorical', which will 
@@ -237,7 +247,12 @@ class DataPrep:
                 dna_encoder = dna_encs[dna_encoder](self.data)
             else:
                 dna_encoder = dna_encs[dna_encoder]() 
-        if type(tax_encoder) == str:
+        if not self.labelled():
+            print("No data labels have been imported.") 
+            print("If the data is labelled, specify tax_parser in init.")
+            tax_encoder = type('placeholder', (), 
+                               {'encode': lambda self, x: torch.zeros(1)})()
+        elif type(tax_encoder) == str:
             tax_encoder = tax_encs[tax_encoder](self.data)
 
         if valid_split > 0:
@@ -248,7 +263,7 @@ class DataPrep:
         else:
             data = self._encode_subset(self.data, dna_encoder, tax_encoder)
     
-        if utils.VERBOSE > 0:
+        if utils.VERBOSE > 0 and self.labelled():
             data.labels_report() 
             data.unknown_labels_report() if tax_encoder is not None else 0
 
@@ -281,51 +296,60 @@ class DataPrep:
 
         return data
 
-    def unite_parser(self, filename):
-        '''Reads a Unite FASTA file into a Pandas dataframe'''
+    def read_fasta(self, filename, tax_parser=None):
+        '''Reads a FASTA file into a Pandas dataframe'''
 
         # NOTE using .readlines(x) limits the data to x bytes, use for debugging
         unite_file = open(filename).readlines()
 
         data = []
-        if utils.VERBOSE > 0:
-            print("Parsing UNITE data...")
         for i in tqdm(range(0,len(unite_file),2)):
-            header = unite_file[i][:-1].split('|') # Remove \n and split columns
+            header = unite_file[i][:-1] # Remove \n 
             seq = unite_file[i+1][:-1] # Sequence on the next line, remove \n
-            taxonomy = header[1] # Retrieve taxonomy data      
-            taxonomy, species = taxonomy.split(';s__')
-            taxonomy, genus = taxonomy.split(';g__')
-            taxonomy, family = taxonomy.split(';f__')
-            taxonomy, order = taxonomy.split(';o__')
-            taxonomy, classs = taxonomy.split(';c__')
-            taxonomy, phylum = taxonomy.split(';p__')
-            sh = header[2] # Get SH 
-            data_row = [sh, phylum, classs, order, family, genus, species, seq]
+            if tax_parser is not None:
+                data_row = tax_parser(header) + [seq]
+            else:
+                data_row = [header, seq]
             data.append(data_row)
 
-        data = pd.DataFrame(data, columns=['sh'] + utils.LEVELS + ['sequence'])
-        data = self.unite_label_preprocessing(data)
+        columns = ['id', 'sequence']
+        if tax_parser is not None:
+            columns = ['id'] + utils.LEVELS + ['sequence']    
+        data = pd.DataFrame(data, columns=columns)
 
         return data
     
-    def unite_label_preprocessing(self, data):
+    def unite_parser(self, fasta_header):
+        '''Parses FASTA headers using the UNITE format to extract taxonomies'''
+
+        # Retrieving taxonomies
+        fasta_header = fasta_header.split('|')
+        sh = fasta_header[2]
+        taxonomy = fasta_header[1] # Retrieve taxonomy data      
+        taxonomy, species = taxonomy.split(';s__')
+        taxonomy, genus = taxonomy.split(';g__')
+        taxonomy, family = taxonomy.split(';f__')
+        taxonomy, order = taxonomy.split(';o__')
+        taxonomy, classs = taxonomy.split(';c__')
+        taxonomy, phylum = taxonomy.split(';p__')
+        data_row = [sh, phylum, classs, order, family, genus, species]
+
+        return self.unite_label_preprocessing(data_row)
+
+    def unite_label_preprocessing(self, data_row):
         '''Cleans up labels in the UNITE dataset, labels uncertain taxons'''
-        
+
         # Handling uncertain taxons
-        for lvl in utils.LEVELS:
-            repl = [utils.UNKNOWN_STR]
-            data.loc[data[lvl].str[-14:]=='Incertae_sedis', 
-                     lvl] = repl
-            data.loc[data[lvl].str[-14:]=='incertae_sedis', 
-                     lvl] = repl
-            data.loc[data[lvl].str[:2]=='GS', lvl] = repl    
-        data.loc[data['species'].str[-3:]=='_sp', 'species'] = repl
+        for i in range(1,7):
+            if ((data_row[i][-14:].lower() == 'incertae_sedis') or
+                (data_row[i][:2] == 'GS') or
+                (i == 6 and data_row[i][-3:] == '_sp')): 
+                    data_row[i] = utils.UNKNOWN_STR
         # Removing extra info on species level
         for addition in ['_subsp\\.', '_var\\.', '_f\\.']:
-            data['species'] = data['species'].str.split(addition).str[0]
+            data_row[6] = data_row[6].split(addition)[0]
 
-        return data
+        return data_row
     
     def length_report(self):
         '''Prints min, max, median, and std of sequences in dataframe.'''
@@ -393,3 +417,10 @@ class DataPrep:
         if utils.VERBOSE > 0:
             print(len(self.data), "sequences retained after length filter")
         return self
+
+    def labelled(self):
+        '''Returns True if all 6 taxonomic labels are available'''
+        for lvl in utils.LEVELS:
+            if lvl not in self.data.columns:
+                return False
+        return True

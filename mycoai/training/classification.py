@@ -115,15 +115,16 @@ class ClassificationTask:
         return model, history
     
     @staticmethod
-    def test(model,data,loss=torch.nn.CrossEntropyLoss(), metrics=EVAL_METRICS):
+    def test(model, data, loss=None, metrics=EVAL_METRICS):
         '''Produces results overview on test dataset (multiple test sets 
         supported when provided as list in `data`)'''
 
         # Initializing
         print('Evaluating...') if utils.VERBOSE > 0 else None
         data = [data] if type(data) != list else data
-        if type(loss) != list:
-            loss = [loss for i in range(len(model.target_levels))]
+        if loss is None:
+            loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
+                    for i in range(6)]
         metrics = {'Loss': loss} | metrics
         results = ClassificationTask.results_init(model.target_levels, metrics)
         coverage = {True: 'known', False: 'total'}
@@ -149,7 +150,7 @@ class ClassificationTask:
         
         Parameters
         ----------
-        model: ITSClassifier
+        model: DeepITS
             The to-be-evaluated neural network
         data: UniteData
             Test data
@@ -160,7 +161,7 @@ class ClassificationTask:
 
         model.eval()
         with torch.no_grad():
-            y_pred, y = model.predict(data, return_labels=True)
+            y_pred, y = model._predict(data, return_labels=True)
             results = []
             for m in metrics:
                 for i, lvl in enumerate(model.target_levels):

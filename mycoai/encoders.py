@@ -70,6 +70,7 @@ class BytePairEncoder(DNAEncoder):
                                        control_symbols = ['MASK'],
                                        character_coverage=1.0)
         
+        self.vocab_size = vocab_size
         self.sp = spm.SentencePieceProcessor(model_proto=mem_stream.getvalue())
         self.length = length
 

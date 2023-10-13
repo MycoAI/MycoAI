@@ -1,1 +1,1 @@
-from .its_classifier import ITSClassifier
+from .deep_its import DeepITS
