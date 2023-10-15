@@ -31,6 +31,7 @@ environment with all the necessary dependencies using the code below.
 * Scikit-learn [[link](https://scikit-learn.org/)]
 * Scipy [[link](https://scipy.org/)]
 * SentencePiece [[link](https://github.com/google/sentencepiece)]
+* Tqdm [[link](https://github.com/tqdm/tqdm)]
 
 # Usage
 In case you want our model(s) to analyze/classify your data, we recommend 

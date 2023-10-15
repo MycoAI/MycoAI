@@ -15,8 +15,7 @@ def classify(fasta_filepath, output_filepath='prediction.csv',
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(prog='python classify.py',
-        description='Taxonomic classification of fungal ITS sequences.',
-        epilog='test')
+        description='Taxonomic classification of fungal ITS sequences.')
     
     parser.add_argument('fasta_filepath',
         help='Path to the FASTA file containing ITS sequences.')
