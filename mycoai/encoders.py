@@ -49,6 +49,10 @@ class FourDimDNA(DNAEncoder):
                for i in range(min(len(data_row['sequence']), self.length))])
         encoding = encoding + [[0,0,0,0]]*(self.length-len(encoding)) # Padding
         return torch.tensor(encoding, dtype=torch.float32).transpose(1,0)
+
+    def get_config(self):
+        return {'type':       utils.get_type(self),
+                'max_length': self.length}
     
 
 class BytePairEncoder(DNAEncoder):
@@ -81,6 +85,11 @@ class BytePairEncoder(DNAEncoder):
         encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']] 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.int)
+
+    def get_config(self):
+        return {'type':       utils.get_type(self),
+                'max_length': self.length,
+                'vocab_size': self.vocab_size}
     
 
 class KmerEncoder(DNAEncoder):
@@ -122,6 +131,13 @@ class KmerTokenizer(KmerEncoder):
         encoding.append(utils.TOKENS['SEP']) # Add separator token 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.int)
+    
+    def get_config(self):
+        return {'type':       utils.get_type(self),
+                'k':          self.k,
+                'stride':     self.stride,
+                'max_length': self.length,
+                'vocab_size': self.vocab_size}
 
 
 class KmerOneHot(KmerEncoder):
@@ -150,6 +166,13 @@ class KmerOneHot(KmerEncoder):
         empty = [0]*(self.vocab_size)
         empty[index] = 1
         return empty
+
+    def get_config(self):
+        return {'type':       utils.get_type(self),
+                'k':          self.k,
+                'stride':     self.stride,
+                'max_length': self.length,
+                'vocab_size': self.vocab_size}
     
 
 class KmerSpectrum(KmerEncoder):
@@ -168,7 +191,13 @@ class KmerSpectrum(KmerEncoder):
             freqs[self.map[seq[i:i+self.k]]] += 1
         if self.normalize: # Normalize
             freqs = freqs/freqs.sum()
-        return torch.tensor([list(freqs)], dtype=torch.float32) 
+        return torch.tensor([list(freqs)], dtype=torch.float32)
+
+    def get_config(self):
+        return {'type':       utils.get_type(self),
+                'k':          self.k,
+                'stride':     self.stride,
+                'normalize':  self.normalize} 
 
 
 class TaxonEncoder:

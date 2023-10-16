@@ -25,7 +25,7 @@ class Dataset(torch.utils.data.Dataset):
         Class that was used to generate the taxonomies tensor'''
 
     def __init__(self, sequences=None, taxonomies=None, dna_encoder=None, 
-                 tax_encoder=None, filepath=None):
+                 tax_encoder=None, name=None, filepath=None):
         '''Initializes Dataset object from tensors or imports from filepath'''
 
         if filepath is not None:
@@ -35,6 +35,7 @@ class Dataset(torch.utils.data.Dataset):
             self.taxonomies = taxonomies
             self.dna_encoder = dna_encoder
             self.tax_encoder = tax_encoder
+            self.name = name
 
     def __getitem__(self, idx):
         return self.sequences[idx], self.taxonomies[idx]
@@ -47,7 +48,8 @@ class Dataset(torch.utils.data.Dataset):
         content = {'sequences':    self.sequences,
                    'taxonomies':   self.taxonomies,
                    'dna_encoder':  self.dna_encoder,
-                   'tax_encoder':  self.tax_encoder}
+                   'tax_encoder':  self.tax_encoder,
+                   'name':         self.name}
         torch.save(content, export_path)
 
     def import_data(self, import_path):
@@ -57,12 +59,23 @@ class Dataset(torch.utils.data.Dataset):
         self.taxonomies = content['taxonomies']
         self.dna_encoder = content['dna_encoder']
         self.tax_encoder = content['tax_encoder']
+        self.name = content['name']
 
+    def get_config(self):
+        '''Returns configuration dictionary of this object instance.'''
+        return {
+            'name':             self.name,
+            'num_examples':     self.taxonomies.shape[0],
+            'classes_per_lvl':  self.num_classes_per_level(),
+            'min_class_size':   self.get_class_size('min'),
+            'max_class_size':   self.get_class_size('max'),
+            'med_class_size':   self.get_class_size('med')
+        }
+    
     def labels_report(self):
         '''Prints the number of classes to predict on each level.'''
         print("No. of to-be-predicted classes:")
-        num_classes = [len(self.tax_encoder.lvl_encoders[i].classes_) 
-                                                              for i in range(6)]
+        num_classes = self.num_classes_per_level()
         table = pd.DataFrame([['Classes (#)'] + num_classes], 
                              columns=[''] + utils.LEVELS)
         table = table.set_index([''])
@@ -81,6 +94,25 @@ class Dataset(torch.utils.data.Dataset):
         table = table.round(1)
         print(table)
 
+    def num_classes_per_level(self):
+        '''Number of classes per taxonomic level'''
+        return [len(self.tax_encoder.lvl_encoders[i].classes_)for i in range(6)]
+
+    def get_class_size(self, mode):
+        '''Min/max/med number of examples per class per taxonomic level'''
+        output = []
+        for lvl in range(6):
+            bins = torch.bincount(self.taxonomies[:,lvl]
+                                  [self.taxonomies[:,lvl] != utils.UNKNOWN_INT])
+            bins = bins[bins != 0]
+            if mode == 'min':
+                output.append(bins.min().item())
+            elif mode == 'max':
+                output.append(bins.max().item())
+            else: # mode == 'med'
+                output.append(bins.median().item())
+        return output
+        
     def weighted_loss(self, loss_function, sampler=None):
         '''Returns list of weighted loss (weighted by reciprocal of class size).
         If sampler is provided, will correct for the expected data distribution
@@ -123,7 +155,9 @@ class Dataset(torch.utils.data.Dataset):
                 sizes = sizes.to(utils.DEVICE)
                 loss = loss_function(weight=1/sizes, # and take reciprocal
                                      ignore_index=utils.UNKNOWN_INT)
-                
+
+            loss.weighted = True
+            loss.sampler_correction = False if sampler is None else True    
             losses.insert(0, loss)
 
         return losses
@@ -171,7 +205,8 @@ class DataPrep:
         'phylum', 'class', 'order', 'genus', 'family', 'species', and 'sequence'
     '''
 
-    def __init__(self, filename, tax_parser='unite', allow_duplicates=False):
+    def __init__(self, filename, tax_parser='unite', allow_duplicates=False,
+                 name=None):
         '''Loads data into DataPrep object, using parser adjusted to data format
         
         Parameters
@@ -185,7 +220,9 @@ class DataPrep:
             Also supports user-custom functions, as long as they return a list
             following the format: [id, phyl, clas, ord, fam, gen, spec]. 
         allow_duplicates: bool
-            Drops duplicate entries if False (default is False)'''
+            Drops duplicate entries if False (default is False)
+        name: str
+            Name of dataset. Will be inferred from filename if None.'''
         
         tax_parsers = {'unite':self.unite_parser}
         if type(tax_parser) == str:
@@ -199,6 +236,8 @@ class DataPrep:
                 data.drop_duplicates(subset=['sequence'], inplace=True)
 
         self.data = data
+        if name is None:
+            self.name = utils.filename_from_path(filename)
 
         if utils.VERBOSE > 0:
             print(len(self.data), "samples loaded into dataframe.")
@@ -258,10 +297,12 @@ class DataPrep:
         if valid_split > 0:
             train_df, valid_df = train_test_split(self.data, 
                                                   test_size=valid_split)
-            data = self._encode_subset(train_df, dna_encoder, tax_encoder)
-            valid_data = self._encode_subset(valid_df, dna_encoder, tax_encoder)
+            data = self._encode_subset(train_df, dna_encoder, tax_encoder, 
+                                       self.name + f' ({1-valid_split})')
+            valid_data = self._encode_subset(valid_df, dna_encoder, tax_encoder, 
+                                             self.name + f' ({valid_split})')
         else:
-            data = self._encode_subset(self.data, dna_encoder, tax_encoder)
+            data = self._encode_subset(self.data, dna_encoder, tax_encoder, self.name)
     
         if utils.VERBOSE > 0 and self.labelled():
             data.labels_report() 
@@ -277,7 +318,7 @@ class DataPrep:
             return data
 
     @staticmethod
-    def _encode_subset(dataframe, dna_encoder, tax_encoder):
+    def _encode_subset(dataframe, dna_encoder, tax_encoder, name):
         '''Encodes dataframe given the specified encoders'''
 
         # Loop through the data, encode sequences and labels 
@@ -292,7 +333,7 @@ class DataPrep:
         # Convert to tensors and store
         sequences = torch.stack(sequences)
         taxonomies = torch.stack(taxonomies)
-        data = Dataset(sequences, taxonomies, dna_encoder, tax_encoder)
+        data = Dataset(sequences, taxonomies, dna_encoder, tax_encoder, name)
 
         return data
 

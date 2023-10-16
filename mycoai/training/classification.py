@@ -2,6 +2,7 @@
 
 import time
 import torch
+import wandb
 import numpy as np
 import pandas as pd
 import torch.utils.data as tud
@@ -14,9 +15,12 @@ from mycoai.training import weight_schedules as ws
 
 EVAL_METRICS = {'Accuracy': skmetric.accuracy_score,
                 'Accuracy (balanced)': skmetric.balanced_accuracy_score,
-                'Precision': partial(skmetric.precision_score, average='macro'),
-                'Recall': partial(skmetric.recall_score, average='macro'),
-                'F1': partial(skmetric.f1_score, average='macro'),
+                'Precision': partial(skmetric.precision_score, 
+                                     average='macro', zero_division=np.nan),
+                'Recall': partial(skmetric.recall_score, 
+                                  average='macro', zero_division=np.nan),
+                'F1': partial(skmetric.f1_score, 
+                              average='macro', zero_division=np.nan),
                 'MCC': skmetric.matthews_corrcoef}
 
 mean = lambda tensor, weights: (tensor @ weights) / weights.sum()
@@ -28,7 +32,7 @@ class ClassificationTask:
     @staticmethod
     def train(model, train_data, valid_data=None, epochs=100, loss=None,
               batch_size=64, sampler=None, optimizer=None, metrics=EVAL_METRICS, 
-              weight_schedule=None):
+              weight_schedule=None, wandb_config={}, wandb_name=None):
         '''Trains a neural network to classify ITS sequences
   
         Parameters
@@ -56,7 +60,11 @@ class ClassificationTask:
             balanced acuracy, precision, recall, f1, and mcc).
         weight_schedule:
             Factors by which each level should be weighted in loss per epoch 
-            (default is Constant([1,1,1,1,1,1]))'''
+            (default is Constant([1,1,1,1,1,1]))
+        wandb_config: dict
+            Extra information to be added to weights and biases config data.
+        wandb_name: str
+            Name of the run to be displayed on weights and biases.'''
         
         # Initializing/setting parameter values
         if loss is None:
@@ -69,10 +77,13 @@ class ClassificationTask:
             weight_schedule = ws.Constant([1]*len(model.target_levels))
         train_dataloader = tud.DataLoader(train_data, batch_size=batch_size, 
                                           sampler=sampler)
-        metrics = {'Loss': loss} | metrics
-        history = ClassificationTask.history_init(model.target_levels, metrics, 
-                                                  (valid_data is not None))
-
+        metrics = {'Loss': loss, **metrics}
+        log_columns = ClassificationTask.wandb_log_columns(model.target_levels, 
+                                              metrics, (valid_data is not None))
+        wandb_run = ClassificationTask.wandb_init(train_data, valid_data, model, 
+            optimizer, weight_schedule, sampler, loss, batch_size, epochs, 
+            wandb_config, wandb_name)
+        
         # Training
         t0 = time.time()
         print("Training...") if utils.VERBOSE > 0 else None
@@ -96,21 +107,30 @@ class ClassificationTask:
                 train_loss += x.size(0)*losses.detach()
 
             # Validation results
-            scores = ((train_loss) / len(train_data)).detach().cpu().numpy()
+            scores = ClassificationTask.evaluate(model, train_data, metrics)
+            scores = np.concatenate([[epoch+1], scores])
             if valid_data is not None:
                 scores = np.concatenate([scores, 
                        ClassificationTask.evaluate(model, valid_data, metrics)])
-            scores = scores.reshape(1,-1)
-            history = pd.concat([history, 
-                                  pd.DataFrame(scores,columns=history.columns)],
-                                  ignore_index=True)
-            # TODO Currently only works when valid_data is available
-            ClassificationTask.save_history(history,metrics,model.target_levels)
+            wandb_run.log({column: score 
+                           for column, score in zip(log_columns, scores)})
 
+        # Finishing the wandb_run, getting results dataframe
         model_parameters = filter(lambda p: p.requires_grad, model.parameters())
         params = sum([np.prod(p.size()) for p in model_parameters])
-        print("Number of parameters:", params)
-        print("Training time (s): " + str(time.time()-t0))
+        wandb_run.config.update({'num_params': params})
+        wandb_run.finish(quiet=True)
+        wandb_api = wandb.Api()
+        run = wandb_api.run(f'{wandb_run.project}/{wandb_run._run_id}')
+        history = run.history(pandas=True)
+        
+        if utils.VERBOSE > 0:
+            print("Training finished, log saved to wandb (see above).")
+            print("Final accuracy scores:\n---------------------\n")
+            ClassificationTask.final_report(history,model.target_levels,'train')
+            if valid_data is not None:
+                ClassificationTask.final_report(history,model.target_levels,
+                                                'valid')
         
         return model, history
     
@@ -125,7 +145,7 @@ class ClassificationTask:
         if loss is None:
             loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
                     for i in range(6)]
-        metrics = {'Loss': loss} | metrics
+        metrics = {'Loss': loss, **metrics}
         results = ClassificationTask.results_init(model.target_levels, metrics)
         coverage = {True: 'known', False: 'total'}
         
@@ -201,7 +221,6 @@ class ClassificationTask:
     @staticmethod
     def results_init(target_levels, metrics):
         '''Initializes an empty results dataframe with correct rows/columns'''
-        columns = ['']
         columns += [f'{metric}|{utils.LEVELS[lvl]}' for metric in metrics 
                                                        for lvl in target_levels]
         if len(target_levels) == 6:
@@ -210,28 +229,43 @@ class ClassificationTask:
         return pd.DataFrame(columns=columns)
 
     @staticmethod
-    def history_init(target_levels, metrics, use_valid):
-        '''Initializes an empty history dataframe with correct columns'''
-        columns = [f'Loss|train|{utils.LEVELS[lvl]}' for lvl in target_levels]
-        if use_valid:
-            columns +=  [f'{metric}|valid|{utils.LEVELS[lvl]}' 
+    def wandb_log_columns(target_levels, metrics, use_valid):
+        '''Returns a list of column names for the wandb log'''
+        columns = ['Epoch']
+        for dataset in ['train', 'valid'][:int(use_valid)+1]:
+            columns +=  [f'{metric}|{dataset}|{utils.LEVELS[lvl]}' 
                            for metric in metrics for lvl in target_levels]
-        if use_valid > 0 and len(target_levels) == 6:
-            columns += ([f'Consistency|valid|{pair}' 
+            if len(target_levels) == 6:
+                columns += ([f'Consistency|{dataset}|{pair}' 
                                for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
-        return pd.DataFrame(columns=columns)
+        return columns
+        
+    @staticmethod
+    def wandb_init(train_data, valid_data, model, optimizer, weight_schedule, 
+                   sampler, loss, batch_size, epochs, wandb_config, wandb_name):
+        config = {
+            **utils.get_config(train_data, prefix='trainset'),
+            **utils.get_config(valid_data, prefix='validset'),
+            **utils.get_config(model),
+            **utils.get_config(optimizer, prefix='opt'),
+            **utils.get_config(weight_schedule, 'weight_sched'),
+            **utils.get_config(sampler, 'sampler'),
+            **utils.get_config(loss[0], 'loss'),
+            'batch_size': batch_size, 
+            'epochs': epochs,
+            **wandb_config
+        }
+        return wandb.init(project='MycoAI DeepITS classification',config=config, 
+                          name=wandb_name, dir=utils.OUTPUT_DIR)
 
     @staticmethod
-    def save_history(history, metrics, target_levels):
-        '''Exports history file (verbose > 0), generates plots (verbose > 1)'''
-        if utils.VERBOSE > 0:
-            history.to_csv(utils.OUTPUT_DIR + '/train_scores.csv', 
-                           float_format='{:.3}'.format)
-            print("Training loss history saved.")
-        if utils.VERBOSE > 1:
-            plotter.classification_loss(history, target_levels)
-            for metric in metrics:
-                if metric != 'Loss':
-                    plotter.classification_metric(history, metric,target_levels)
-            print("Training metric plots saved.")
-        
+    def final_report(history, target_levels, train_or_valid):
+        print(train_or_valid.capitalize() + ":")
+        report = history[[f'Accuracy|{train_or_valid}|{utils.LEVELS[lvl]}' 
+                          for lvl in target_levels]]
+        columns = dict(zip(report.columns, 
+                           [utils.LEVELS[lvl] for lvl in target_levels]))
+        report = report.tail(1)
+        report.rename(columns=columns, inplace=True)
+        report.reset_index(drop=True, inplace=True)
+        print(report)

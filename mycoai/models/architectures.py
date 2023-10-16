@@ -1,6 +1,7 @@
 '''Several architectures that handle ITS data. Must output a flat tensor.'''
 
 import torch
+from .. import utils
 from .transformers import BERT
 
 class SimpleCNN(torch.nn.Module):
@@ -20,12 +21,19 @@ class SimpleCNN(torch.nn.Module):
             conv.append(torch.nn.MaxPool1d(pool_size, 1))
             in_channels = out_channels
         self.conv = torch.nn.ModuleList(conv)
+        self.conv_layers = conv_layers
     
     def forward(self, x):
         for layer in self.conv:
             x = layer(x)
         x = torch.flatten(x, 1)
         return x
+    
+    def get_config(self):
+        return {
+            'type':   utils.get_type(self),
+            'layers': self.conv_layers
+        }
     
 
 class ResNet(torch.nn.Module):
@@ -45,6 +53,7 @@ class ResNet(torch.nn.Module):
         self.layer2 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer3 = self._make_layer(block, 512, layers[3], stride=2)
         self.avgpool = torch.nn.AvgPool1d(7, stride=1)
+        self.layers = layers
         
     def _make_layer(self, block, planes, blocks, stride=1):
 
@@ -72,6 +81,12 @@ class ResNet(torch.nn.Module):
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         return x
+
+    def get_config(self):
+        return {
+            'type':     utils.get_type(self),
+            'layers':   self.layers
+        }
     
 
 class ResidualBlock(torch.nn.Module):

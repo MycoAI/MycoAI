@@ -46,6 +46,10 @@ class BERT(torch.nn.Module):
         self.src_pos_embed = PositionalEmbedding(
                                             d_model, vocab_size, dropout, max_len)
         self.encoder = Encoder(d_model, d_ff, h, N, dropout)
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.h = h
+        self.N = N
         self.set_mode('default')
 
         # Initialize parameters with Glorot / fan_avg.
@@ -70,6 +74,15 @@ class BERT(torch.nn.Module):
         src_mask = (src != utils.TOKENS['PAD']).unsqueeze(-2) # Mask padding
         src_embedding = self.src_pos_embed(src) 
         return self.encoder(src_embedding, src_mask)[:,0,:] # Only CLS token
+    
+    def get_config(self):
+        return {
+            'type':    utils.get_type(self),
+            'd_model': self.d_model,
+            'd_ff':    self.d_ff,
+            'h':       self.h,
+            'N':       self.N
+        }
 
 
 class Encoder(torch.nn.Module):

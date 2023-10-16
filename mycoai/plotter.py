@@ -42,30 +42,32 @@ def counts_sunburstplot(dataprep, id=''):
     fig = px.sunburst(counts, path=utils.LEVELS, values='id')
     pio.write_image(fig, utils.OUTPUT_DIR + "sunburst_" + id + ".png", scale=4)
 
-def classification_loss(history, target_levels):
-    '''Plots the loss learning curves for a (multi-class) neural network'''
-    for lvl in target_levels:
-        valid_plot = plt.plot(history['Loss|valid|' + utils.LEVELS[lvl]],
-                                        label=utils.LEVELS[lvl] + " (valid)")
-        plt.plot(history['Loss|train|' + utils.LEVELS[lvl]], alpha=0.5,
-                    color=valid_plot[0].get_color(), 
-                    label=utils.LEVELS[lvl] + " (train)")
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.savefig(utils.OUTPUT_DIR + '/loss.png')
-    plt.close()
-    return
-
-def classification_metric(history, metric_name, target_levels):
+def classification_learning_curve(history, metric_name, target_levels, 
+                                  show_valid=True, show_train=False):
     '''Plots the learning curves for a single metric on all target levels'''
-    for level in [utils.LEVELS[i] for i in target_levels]:
-        plt.plot(history[metric_name + '|valid|' + level], label=level)
+    
+    for lvl in target_levels:
+        valid_plot = False
+        if show_valid:
+            valid_plot = plt.plot(
+                history[f'{metric_name}|valid|{utils.LEVELS[lvl]}'],
+                label=utils.LEVELS[lvl] + " (valid)"
+            )
+        if show_train:
+            if valid_plot is not False:
+                plt.plot(history[f'{metric_name}|train|{utils.LEVELS[lvl]}'], 
+                         alpha=0.5, color=valid_plot[0].get_color(), 
+                         label=utils.LEVELS[lvl] + " (train)")
+            else:
+                plt.plot(history[f'{metric_name}|train|{utils.LEVELS[lvl]}'], 
+                         alpha=0.5, label=utils.LEVELS[lvl] + " (train)")
+    
     plt.xlabel('Epochs')
     plt.ylabel(metric_name)
     plt.legend()
     plt.savefig(utils.OUTPUT_DIR + '/' + metric_name.lower() + '.png')
     plt.close()
+    
     return
 
 def confusion_matrices(model, data):
