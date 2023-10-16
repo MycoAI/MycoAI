@@ -26,52 +26,51 @@ class ClassificationTask:
     '''Multi-task classification (for multiple taxonomic levels)'''
 
     @staticmethod
-    def train(model, train_data, valid_data=None, epochs=100, loss=None,
-              batch_size=64, sampler=None, optimizer=None, metrics=EVAL_METRICS, 
-              weight_schedule=None):
+    def train(model, data, epochs, loss=torch.nn.CrossEntropyLoss(), 
+              batch_size=64, optimizer=None, metrics=EVAL_METRICS, 
+              valid_split=0.2, weight_schedule=None):
         '''Trains a neural network to classify ITS sequences
   
         Parameters
         ----------
         model: torch.nn.Module
             Neural network architecture
-        train_data: mycoai.data.Dataset
-            Preprocessed dataset containing ITS sequences for training
-        valid_data: mycoai.data.Dataset
-            Preprocessed dataset containing ITS sequences for validation   
+        data: mycoai.data.Dataset
+            Preprocessed dataset (torch Dataset object) containing ITS sequences    
         epochs: int
             Number of training iterations
+        batch_size: int
+            Number of training examples per optimization step (default is 64)
         loss: list | function
             To-be-optimized loss function (or list of functions per level) 
             (default is CrossEntropyLoss)
-        batch_size: int
-            Number of training examples per optimization step (default is 64)
-        sampler: torch.utils.data.Sampler
-            Strategy to use for drawing data samples
         optimizer: torch.optim
             Optimization strategy (default is Adam)
         metrics: dict{str:function}
             Evaluation metrics to report during training, provided as dictionary
             with metric name as key and function as value (default is accuracy, 
             balanced acuracy, precision, recall, f1, and mcc).
+        valid_split: float
+            Data proportion be used for validation (default is 0.2)
         weight_schedule:
             Factors by which each level should be weighted in loss per epoch 
             (default is Constant([1,1,1,1,1,1]))'''
         
         # Initializing/setting parameter values
-        if loss is None:
-            loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
-                    for i in range(6)]
+        if type(loss) != list:
+            loss = [loss for i in range(len(model.target_levels))]
         if optimizer is None:
             optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
                                         weight_decay=0.0001)
         if weight_schedule is None:
             weight_schedule = ws.Constant([1]*len(model.target_levels))
+        train_data, valid_data = tud.random_split(data, 
+                                                  [1-valid_split, valid_split])
         train_dataloader = tud.DataLoader(train_data, batch_size=batch_size, 
-                                          sampler=sampler)
+                                          shuffle=True)
         metrics = {'Loss': loss} | metrics
-        history = ClassificationTask.history_init(model.target_levels, metrics, 
-                                                  (valid_data is not None))
+        history = ClassificationTask.history_init(model.target_levels,
+                                                           metrics, valid_split)
 
         # Training
         t0 = time.time()
@@ -97,7 +96,7 @@ class ClassificationTask:
 
             # Validation results
             scores = ((train_loss) / len(train_data)).detach().cpu().numpy()
-            if valid_data is not None:
+            if valid_split > 0:
                 scores = np.concatenate([scores, 
                        ClassificationTask.evaluate(model, valid_data, metrics)])
             scores = scores.reshape(1,-1)
@@ -115,16 +114,15 @@ class ClassificationTask:
         return model, history
     
     @staticmethod
-    def test(model, data, loss=None, metrics=EVAL_METRICS):
+    def test(model,data,loss=torch.nn.CrossEntropyLoss(), metrics=EVAL_METRICS):
         '''Produces results overview on test dataset (multiple test sets 
         supported when provided as list in `data`)'''
 
         # Initializing
         print('Evaluating...') if utils.VERBOSE > 0 else None
         data = [data] if type(data) != list else data
-        if loss is None:
-            loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
-                    for i in range(6)]
+        if type(loss) != list:
+            loss = [loss for i in range(len(model.target_levels))]
         metrics = {'Loss': loss} | metrics
         results = ClassificationTask.results_init(model.target_levels, metrics)
         coverage = {True: 'known', False: 'total'}
@@ -150,7 +148,7 @@ class ClassificationTask:
         
         Parameters
         ----------
-        model: DeepITS
+        model: ITSClassifier
             The to-be-evaluated neural network
         data: UniteData
             Test data
@@ -161,7 +159,7 @@ class ClassificationTask:
 
         model.eval()
         with torch.no_grad():
-            y_pred, y = model._predict(data, return_labels=True)
+            y_pred, y = model.predict(data, return_labels=True)
             results = []
             for m in metrics:
                 for i, lvl in enumerate(model.target_levels):
@@ -181,7 +179,7 @@ class ClassificationTask:
             return np.array(results + cons)
         else:
             return np.array(results)
-        
+
     @staticmethod    
     def consistency(full_prediction, tax_encoder):
         '''Calculates the percentage of which predictions for a parent taxon are 
@@ -210,13 +208,13 @@ class ClassificationTask:
         return pd.DataFrame(columns=columns)
 
     @staticmethod
-    def history_init(target_levels, metrics, use_valid):
+    def history_init(target_levels, metrics, valid_split):
         '''Initializes an empty history dataframe with correct columns'''
         columns = [f'Loss|train|{utils.LEVELS[lvl]}' for lvl in target_levels]
-        if use_valid:
+        if valid_split > 0:
             columns +=  [f'{metric}|valid|{utils.LEVELS[lvl]}' 
                            for metric in metrics for lvl in target_levels]
-        if use_valid > 0 and len(target_levels) == 6:
+        if valid_split > 0 and len(target_levels) == 6:
             columns += ([f'Consistency|valid|{pair}' 
                                for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
         return pd.DataFrame(columns=columns)
