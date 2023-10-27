@@ -41,7 +41,6 @@ def counts_sunburstplot(dataprep, id=''):
 
     print("Creating sunburst plot...")
     counts = dataprep.data.groupby(utils.LEVELS, as_index=False).count()
-    print(counts)
     fig = px.sunburst(counts, path=utils.LEVELS, values='sequence')
     id = '_' + id if len(id) > 0 else ''
     pio.write_image(fig, utils.OUTPUT_DIR + "sunburst" + id + ".png", scale=4)

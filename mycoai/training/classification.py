@@ -85,7 +85,6 @@ class ClassificationTask:
             wandb_config, wandb_name)
         
         # Training
-        t0 = time.time()
         print("Training...") if utils.VERBOSE > 0 else None
         for epoch in tqdm(range(epochs)):
             model.train()

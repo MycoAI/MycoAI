@@ -44,7 +44,7 @@ class BERT(torch.nn.Module):
 
         super().__init__()
         self.src_pos_embed = PositionalEmbedding(
-                                            d_model, vocab_size, dropout, max_len)
+                                          d_model, vocab_size, dropout, max_len)
         self.encoder = Encoder(d_model, d_ff, h, N, dropout)
         self.d_model = d_model
         self.d_ff = d_ff

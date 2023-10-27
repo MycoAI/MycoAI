@@ -32,6 +32,7 @@ environment with all the necessary dependencies using the code below.
 * Scipy [[link](https://scipy.org/)]
 * SentencePiece [[link](https://github.com/google/sentencepiece)]
 * Tqdm [[link](https://github.com/tqdm/tqdm)]
+* Weights and Biases [[link](https://wandb.ai/site)]
 
 # Usage
 In case you want our model(s) to analyze/classify your data, we recommend 

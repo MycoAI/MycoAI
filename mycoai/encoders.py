@@ -62,7 +62,7 @@ class BytePairEncoder(DNAEncoder):
         if utils.VERBOSE > 0:
             print('Initializing Byte Pair Encoder...')
         mem_stream = io.BytesIO() # In-memory byte stream to save model to
-        sequences = iter(data['sequence'].tolist()) # Sentence iterator object
+        sequences = iter(data.data['sequence'].tolist()) # Sentence iterator object
         spm.SentencePieceTrainer.train(sentence_iterator=sequences, 
                                        vocab_size=vocab_size,
                                        model_type='bpe',
@@ -82,7 +82,7 @@ class BytePairEncoder(DNAEncoder):
         '''Encodes a single data row using the BPE encoder'''
         seq = re.sub('[^ACTG]', '?', data_row['sequence'])
         encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
-        encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']] 
+        encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']]
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.int)
 
@@ -118,7 +118,7 @@ class KmerTokenizer(KmerEncoder):
         self.length = length
         min_token = len(utils.TOKENS)
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
-        self.vocab_size = len(self.map)
+        self.vocab_size = len(self.map) + min_token
 
     def encode(self, data_row):
         '''Encodes data row, returns tensor of (kmer-based) token encodings'''

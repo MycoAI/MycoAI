@@ -283,7 +283,7 @@ class DataPrep:
         tax_encs = {'categorical':   encoders.TaxonEncoder}
         if type(dna_encoder) == str:
             if dna_encoder == 'bpe':
-                dna_encoder = dna_encs[dna_encoder](self.data)
+                dna_encoder = dna_encs[dna_encoder](self)
             else:
                 dna_encoder = dna_encs[dna_encoder]() 
         if not self.labelled():
