@@ -14,13 +14,15 @@ def counts_barchart(dataprep, level='phylum', id=''):
         'id', ascending=False)
     ax = counts.plot.bar(ylabel='# sequences', legend=False)
     ax.set_xticklabels(counts[level])
-    plt.savefig(utils.OUTPUT_DIR + level + '_counts_' + id + '.png')
+    id = '_' + id if len(id) > 0 else ''
+    plt.savefig(utils.OUTPUT_DIR + level + '_counts' + id + '.png')
     plt.close()
 
 def counts_boxplot(dataprep, id=''):
     '''Plots the number of sequences per class as boxplot (all taxon levels)'''
 
     fig, axs = plt.subplots(nrows=1,ncols=6,figsize=(9,3))
+    id = '_' + id if len(id) > 0 else ''
 
     for i in range(len(utils.LEVELS)):
         lvl = utils.LEVELS[i]
@@ -31,7 +33,7 @@ def counts_boxplot(dataprep, id=''):
     axs[0].set_ylabel("# sequences")
     fig.suptitle('Taxon class counts')
     fig.tight_layout()
-    plt.savefig(utils.OUTPUT_DIR + 'boxplot_' + id + '.png')
+    plt.savefig(utils.OUTPUT_DIR + 'boxplot' + id + '.png')
     plt.close()
 
 def counts_sunburstplot(dataprep, id=''):
@@ -39,8 +41,10 @@ def counts_sunburstplot(dataprep, id=''):
 
     print("Creating sunburst plot...")
     counts = dataprep.data.groupby(utils.LEVELS, as_index=False).count()
-    fig = px.sunburst(counts, path=utils.LEVELS, values='id')
-    pio.write_image(fig, utils.OUTPUT_DIR + "sunburst_" + id + ".png", scale=4)
+    print(counts)
+    fig = px.sunburst(counts, path=utils.LEVELS, values='sequence')
+    id = '_' + id if len(id) > 0 else ''
+    pio.write_image(fig, utils.OUTPUT_DIR + "sunburst" + id + ".png", scale=4)
 
 def classification_learning_curve(history, metric_name, target_levels, 
                                   show_valid=True, show_train=False):
