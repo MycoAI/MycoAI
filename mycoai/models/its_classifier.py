@@ -1,4 +1,4 @@
-'''Contains the DeepITS class for complete ITS classification models.'''
+'''Contains the ITSClassifier class for complete ITS classification models.'''
 
 import torch
 import numpy as np
@@ -7,7 +7,7 @@ from .. import utils, data
 from .output_heads import SingleHead, MultiHead, ChainedMultiHead, Inference
 from .transformers import BERT
 
-class DeepITS(torch.nn.Module): 
+class ITSClassifier(torch.nn.Module): 
     '''Fungal taxonomic classification model based on ITS sequences. 
     Supports several architecture variations.'''
 

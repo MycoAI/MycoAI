@@ -14,6 +14,7 @@ UNKNOWN_STR = '?'
 UNKNOWN_INT = 9999999
 PRED_BATCH_SIZE = 1000
 MAX_PER_EPOCH = 500000
+MAX_LEN = 5000 # Max length of positional encodings transformers
 # NOTE Be careful with changing this one: BPE assumes TOKENS['MASK'] == 0
 TOKENS = {'MASK':0, 'CLS':1, 'SEP':2, 'PAD':3, 'UNK':4}
 

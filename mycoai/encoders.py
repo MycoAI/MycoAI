@@ -72,6 +72,7 @@ class BytePairEncoder(DNAEncoder):
                                        pad_id = utils.TOKENS['PAD'],
                                        unk_id = utils.TOKENS['UNK'],
                                        control_symbols = ['MASK'],
+                                       add_dummy_prefix = False,
                                        character_coverage=1.0)
         
         self.vocab_size = vocab_size
@@ -82,9 +83,9 @@ class BytePairEncoder(DNAEncoder):
         '''Encodes a single data row using the BPE encoder'''
         seq = re.sub('[^ACTG]', '?', data_row['sequence'])
         encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
-        encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']]
+        encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']] 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
-        return torch.tensor(encoding, dtype=torch.int)
+        return torch.tensor(encoding, dtype=torch.long)
 
     def get_config(self):
         return {'type':       utils.get_type(self),

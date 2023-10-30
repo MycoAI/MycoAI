@@ -2,7 +2,7 @@
 
 import torch
 from mycoai import data, utils, plotter
-from mycoai.models import DeepITS
+from mycoai.models import ITSClassifier
 from mycoai.models.architectures import ResNet
 from mycoai.training import ClassificationTask
 
@@ -26,7 +26,7 @@ test_data = test_data.encode_dataset(dna_encoder=train_data.dna_encoder,
 # Model definition
 arch = ResNet([2,2,2,2]) # = ResNet18
 # This model will have a single output head and make genus-level predictions
-model = DeepITS(arch, train_data.dna_encoder, train_data.tax_encoder,  
+model = ITSClassifier(arch, train_data.dna_encoder, train_data.tax_encoder,  
                target_levels=['genus'], fcn_layers=[128,20,64], output='single')
 
 # Train/test (optionally with weighted loss/sampling) 

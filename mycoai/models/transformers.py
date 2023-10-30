@@ -18,12 +18,14 @@ from .. import utils
 class BERT(torch.nn.Module):
     '''BERT base model, transformer encoder to be used for various tasks'''
 
-    def __init__(self, vocab_size, d_model=512, d_ff=2048, h=8, N=6, 
-                 dropout=0.1, mode='default', max_len=5000):
+    def __init__(self, len_input, vocab_size, d_model=512, d_ff=2048, h=8, N=6, 
+                 dropout=0.1, mode='default'):
         '''Initializes the transformer given the source/target vocabulary.
         
         Parameters
         ----------
+        len_input: int
+            Length of expected input sequences
         vocab_size: int
             Number of unique tokens in vocabulary
         d_model: int
@@ -38,19 +40,20 @@ class BERT(torch.nn.Module):
             Dropout probability to use throughout network (default is 0.1)
         mode: str
             BERT will use different forward method when mode=='classification'
-        max_len: int
-            Maximum supported length of input by pos. encoders (default is 5000)
         '''
 
         super().__init__()
-        self.src_pos_embed = PositionalEmbedding(
-                                          d_model, vocab_size, dropout, max_len)
+        self.src_pos_embed = PositionalEmbedding(d_model, vocab_size, dropout)
         self.encoder = Encoder(d_model, d_ff, h, N, dropout)
+        self.mlm_layer = torch.nn.Linear(d_model, vocab_size)
+        self.len_input = len_input
+        self.vocab_size = vocab_size
         self.d_model = d_model
         self.d_ff = d_ff
         self.h = h
         self.N = N
         self.set_mode('default')
+        self.to(utils.DEVICE)
 
         # Initialize parameters with Glorot / fan_avg.
         for p in self.parameters():
@@ -61,6 +64,8 @@ class BERT(torch.nn.Module):
         '''Uses alternative forward method when mode == 'classificiation'.'''
         if mode == 'classification':
             self.forward = self._forward_classification
+        elif mode == 'mlm':
+            self.forward = self._forward_mlm
         else:
             self.forward = self._forward_default
 
@@ -74,6 +79,13 @@ class BERT(torch.nn.Module):
         src_mask = (src != utils.TOKENS['PAD']).unsqueeze(-2) # Mask padding
         src_embedding = self.src_pos_embed(src) 
         return self.encoder(src_embedding, src_mask)[:,0,:] # Only CLS token
+
+    def _forward_mlm(self, src):
+        '''Given input sequence, predict masked tokens'''
+        src_mask = (src != utils.TOKENS['PAD']).unsqueeze(-2) # Mask padding
+        src = self.encoder(self.src_pos_embed(src), src_mask)
+        src = self.mlm_layer(src)
+        return torch.softmax(src, dim=-1)
     
     def get_config(self):
         return {
@@ -175,7 +187,7 @@ class FeedForward(torch.nn.Module):
 class PositionalEmbedding(torch.nn.Module):
     '''Converts input into sum of a learned embedding and positional encoding'''
 
-    def __init__(self, d_model, vocab, dropout, max_len):
+    def __init__(self, d_model, vocab, dropout):
         super().__init__()
 
         self.embedder = torch.nn.Embedding(vocab, d_model)
@@ -183,8 +195,8 @@ class PositionalEmbedding(torch.nn.Module):
         self.d_model = d_model
 
         # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1)
+        pe = torch.zeros(utils.MAX_LEN, d_model)
+        position = torch.arange(0, utils.MAX_LEN).unsqueeze(1)
         div_term = torch.exp(
             torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model)
         )

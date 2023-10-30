@@ -75,6 +75,8 @@ class ClassificationTask:
                                         weight_decay=0.0001)
         if weight_schedule is None:
             weight_schedule = ws.Constant([1]*len(model.target_levels))
+        if sampler is None:
+            sampler = torch.utils.data.RandomSampler(train_data)
         train_dataloader = tud.DataLoader(train_data, batch_size=batch_size, 
                                           sampler=sampler)
         metrics = {'Loss': loss, **metrics}
@@ -102,7 +104,7 @@ class ClassificationTask:
                 mean_loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 optimizer.step()
-                # Update metrics
+                # Update metrics TODO probably the next line is never used
                 train_loss += x.size(0)*losses.detach()
 
             # Validation results
@@ -169,7 +171,7 @@ class ClassificationTask:
         
         Parameters
         ----------
-        model: DeepITS
+        model: ITSClassifier
             The to-be-evaluated neural network
         data: UniteData
             Test data
@@ -243,6 +245,7 @@ class ClassificationTask:
     def wandb_init(train_data, valid_data, model, optimizer, weight_schedule, 
                    sampler, loss, batch_size, epochs, wandb_config, wandb_name):
         config = {
+            'task': 'classification',
             **utils.get_config(train_data, prefix='trainset'),
             **utils.get_config(valid_data, prefix='validset'),
             **utils.get_config(model),
@@ -254,7 +257,7 @@ class ClassificationTask:
             'epochs': epochs,
             **wandb_config
         }
-        return wandb.init(project='MycoAI DeepITS classification',config=config, 
+        return wandb.init(project='MycoAI ITSClassifier', config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
 
     @staticmethod

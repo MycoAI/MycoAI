@@ -66,7 +66,7 @@ but the `DataPrep` object also allows for 1) unlabelled FASTA sequence files or
 2) custom header parsers functions written by the user. 
 
 ### Deep ITS classifiers
-The `mycoai.models.DeepITS` class uses deep neural networks for its predictions. 
+The `mycoai.models.ITSClassifier` class uses deep neural networks for its predictions. 
 It can be configured in multiple ways, its arguments are listed below. The most
 important elements of a Deep ITS classifier are its data encoding methods, and 
 its base architecture.  
@@ -132,7 +132,7 @@ For a more extensive example, covering more options, we refer to
 ```python
 import torch
 from mycoai import data, plotter
-from mycoai.models import DeepITS
+from mycoai.models import ITSClassifier
 from mycoai.models.architectures import ResNet
 from mycoai.training import ClassificationTask
 
@@ -148,7 +148,7 @@ test_data = test_data.encode_dataset(dna_encoder=train_data.dna_encoder,
 # Model definition
 arch = ResNet([2,2,2,2]) # = ResNet18
 # This model will have a single output head and make genus-level predictions
-model = DeepITS(arch, train_data.dna_encoder, train_data.tax_encoder,  
+model = ITSClassifier(arch, train_data.dna_encoder, train_data.tax_encoder,  
                target_levels=['genus'], fcn_layers=[128,20,64], output='single')
 
 # Train/test (optionally with weighted loss/sampling) 
