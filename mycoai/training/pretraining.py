@@ -5,6 +5,7 @@ import torch.utils.data as tud
 from tqdm import tqdm
 import wandb
 from mycoai import utils
+from mycoai import training
 
 class MLMTask:
     '''Masked Language Modelling: training a network to predict the value of
@@ -13,7 +14,8 @@ class MLMTask:
     @staticmethod
     def train(model, data, epochs=100, batch_size=64, p_mlm=0.15, p_mask=0.8, 
               p_random=0.1, sampler=None, optimizer=None, warmup_steps=4000,
-              label_smoothing=0.1, wandb_config={}, wandb_name=None):
+              label_smoothing=0.1, mixed_precision=True, wandb_config={}, 
+              wandb_name=None):
         '''Trains an ITS transformer model on Masked Language Modelling task.
         
         Parameters
@@ -44,34 +46,52 @@ class MLMTask:
             proportionally to 1/sqrt(step_number) (default is 4000)
         label_smoothing: float
             Adds uncertainty to target labels as regularization (default is 0.1)
+        mixed_precision: bool
+            Whether or not to use mixed precision for efficient memory
+            utilization on GPU (default is True)
         wandb_config: dict
             Extra information to be added to weights and biases config data.
         wandb_name: str
             Name of the run to be displayed on weights and biases.'''
 
-        # Initializing parameters
-        if optimizer is None:
+        # PARAMETER INITIALIZATION
+        # Data and sampling
+        if sampler is None: # Random sampling as default
+            sampler = torch.utils.data.RandomSampler(data)
+        dataloader = tud.DataLoader(data, batch_size=batch_size,sampler=sampler)
+
+        # Loss and optimizer
+        loss_function = torch.nn.CrossEntropyLoss( # Ignore padding
+            label_smoothing=label_smoothing, ignore_index=utils.TOKENS['PAD'])
+        if optimizer is None: # Use Adam as default
             optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
                                          betas=(0.9,0.98))
-        if sampler is None:
-            sampler = torch.utils.data.RandomSampler(data)
-        if warmup_steps is None:
+        if warmup_steps is None: # Constant learning rate as default
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                        optimizer, lambda step: 0.0001) # Constant learning rate
-        else:
-            schedule = LrSchedule(model.d_model, warmup_steps)
+                        optimizer, lambda step: 0.0001) 
+        else: # Initialize lr scheduler if warmup_steps is specified
+            schedule = training.LrSchedule(model.d_model, warmup_steps)
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                                   optimizer, lambda step: schedule.get_lr(step))
+            
+        # Mixed precision 
+        if mixed_precision and utils.DEVICE.type=='cuda': # Only works on cuda
+            scaler = torch.cuda.amp.grad_scaler.GradScaler()
+        else:
+            scaler = training.DummyScaler() # Dummy object when turned off
+        prec = torch.float32 # Standard precision
+        if mixed_precision and utils.DEVICE.type=='cuda':
+            prec = torch.float16
 
-        loss_function = torch.nn.CrossEntropyLoss(
-            label_smoothing=label_smoothing, ignore_index=utils.TOKENS['PAD'])
-        dataloader = tud.DataLoader(data, batch_size=batch_size,sampler=sampler)
+        # Other configurations
         model.set_mode('mlm') # Turns on MLM layer of BERT model
-        wandb_run = MLMTask.wandb_init(data, model, optimizer, sampler, 
+        wandb_run = MLMTask.wandb_init(data, model, optimizer, sampler, # wandb
             loss_function, batch_size, epochs, p_mlm, p_mask, p_random, 
-            warmup_steps, label_smoothing, wandb_config, wandb_name)
+            warmup_steps, label_smoothing, mixed_precision, wandb_config, 
+            wandb_name)
 
-        # Training loop
+        # TRAINING LOOP
+        print("Training MLM task...") if utils.VERBOSE > 0 else None
         for epoch in tqdm(range(epochs)):
             model.train()
             epoch_loss, epoch_corr, epoch_seen = 0, 0, 0
@@ -82,15 +102,18 @@ class MLMTask:
                 x, y = MLMTask.mask_batch(x, model.vocab_size, 
                                           p_mlm, p_mask, p_random)
                 x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
-                y_pred = model(x) # Make a prediction
-                y = y.view(-1) # Flatten labels
-                y_pred = y_pred.view(-1, model.vocab_size) # Flatten prediction
-                loss = loss_function(y_pred, y) # Calculate loss
                 optimizer.zero_grad()
-                loss.backward() # Calculate gradients
+                with torch.autocast(device_type=utils.DEVICE.type, dtype=prec):
+                    y_pred = model(x) # Make a prediction
+                    y = y.view(-1) # Flatten labels
+                    y_pred = y_pred.view(-1, model.vocab_size) # Flatten 
+                    loss = loss_function(y_pred, y) # Calculate loss
+                scaler.scale(loss).backward() # Calculate gradients
+                scaler.unscale_(optimizer) # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-                optimizer.step() # Apply optimizer 
-                lr_scheduler.step() # Update learning rate 
+                scaler.step(optimizer) # Apply optimizer 
+                lr_scheduler.step() # Update learning rate
+                scaler.update() 
 
                 # Metrics:
                 epoch_loss += x.size(0)*loss.item() # Calculate running loss
@@ -104,6 +127,7 @@ class MLMTask:
                            'loss':      epoch_loss/len(data),
                            'accuracy':  epoch_corr/epoch_seen})
 
+        # WRAPUP
         # Finishing the wandb_run, getting results dataframe
         wandb_run.finish(quiet=True)
         wandb_api = wandb.Api()
@@ -116,32 +140,32 @@ class MLMTask:
     def mask_batch(x, vocab_size, p_mlm=0.15, p_mask=0.8, p_random=0.1):
         '''Maks a batch of sequence data for MLM'''
 
-        # Calculate boolean tensors using selection probabilities
-        select = ((torch.rand(x.shape) < p_mlm) & # Select for MLM
-                    (x != utils.TOKENS['PAD']) & # Can't select...
-                    (x != utils.TOKENS['SEP']) & # ... special tokens
-                    (x != utils.TOKENS['CLS'])) 
-        probs = torch.rand(x.shape)
-        masked = select & (probs < p_mask)
-        random = select & (probs >= p_mask) & (probs < p_mask + p_random)
+        # # Calculate boolean tensors using selection probabilities
+        # select = ((torch.rand(x.shape) < p_mlm) & # Select for MLM
+        #             (x != utils.TOKENS['PAD']) & # Can't select...
+        #             (x != utils.TOKENS['SEP']) & # ... special tokens
+        #             (x != utils.TOKENS['CLS'])) 
+        # probs = torch.rand(x.shape)
+        # masked = select & (probs < p_mask)
+        # random = select & (probs >= p_mask) & (probs < p_mask + p_random)
 
         # Replace with masks/random tokens using the selection tensors
         y = x.clone() # Create a copy
-        x[masked] = utils.TOKENS['MASK'] # Apply mask
-        x[random] = torch.randint( # Apply random tokens
-            len(utils.TOKENS), # Exclude special tokens 
-            vocab_size,
-            (torch.sum(random).item(),), 
-            dtype=torch.long)
-        # The rest for which select is True remains unchanged
-        y[~select] =  utils.TOKENS['PAD'] # Pad those not selected
+        # x[masked] = utils.TOKENS['MASK'] # Apply mask
+        # x[random] = torch.randint( # Apply random tokens
+        #     len(utils.TOKENS), # Exclude special tokens 
+        #     vocab_size,
+        #     (torch.sum(random).item(),), 
+        #     dtype=torch.long)
+        # # The rest for which select is True remains unchanged
+        # y[~select] =  utils.TOKENS['PAD'] # Pad those not selected
 
         return x, y
     
     @staticmethod
     def wandb_init(data, model, optimizer, sampler, loss, batch_size, epochs, 
                    p_mlm, p_mask, p_random, warmup_steps, label_smoothing, 
-                   wandb_config, wandb_name):
+                   mixed_precision, wandb_config, wandb_name):
         config = {
             'task': 'mlm',
             **utils.get_config(data, prefix='trainset'),
@@ -156,25 +180,11 @@ class MLMTask:
             'p_random': p_random,
             'warmup_steps': warmup_steps,
             'label_smoothing': label_smoothing,
+            'mixed_precision': mixed_precision,
             **wandb_config
         }
         return wandb.init(project='MycoAI ITSClassifier', config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
-
-
-class LrSchedule:
-    '''Linearly increases the learning rate for the first warmup_steps, then
-    then decreases the learning rate proportionally to 1/sqrt(step_number)'''
-
-    def __init__(self, d_model, warmup_steps):
-        self.d_model = d_model
-        self.warmup_steps = warmup_steps
-
-    def get_lr(self, step):
-        if step == 0:
-            step = 1
-        return (self.d_model**(-0.5) * 
-                min(step**(-0.5), step * self.warmup_steps ** (-1.5)))
 
 
 class NSPTask:
