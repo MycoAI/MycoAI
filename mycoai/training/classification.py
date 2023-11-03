@@ -2,6 +2,7 @@
 
 import time
 import torch
+import wandb
 import numpy as np
 import pandas as pd
 import torch.utils.data as tud
@@ -9,14 +10,18 @@ import sklearn.metrics as skmetric
 from functools import partial
 from tqdm import tqdm
 from mycoai import utils, plotter
+from mycoai import training
 from mycoai.training import weight_schedules as ws
 
 
 EVAL_METRICS = {'Accuracy': skmetric.accuracy_score,
                 'Accuracy (balanced)': skmetric.balanced_accuracy_score,
-                'Precision': partial(skmetric.precision_score, average='macro'),
-                'Recall': partial(skmetric.recall_score, average='macro'),
-                'F1': partial(skmetric.f1_score, average='macro'),
+                'Precision': partial(skmetric.precision_score, 
+                                     average='macro', zero_division=np.nan),
+                'Recall': partial(skmetric.recall_score, 
+                                  average='macro', zero_division=np.nan),
+                'F1': partial(skmetric.f1_score, 
+                              average='macro', zero_division=np.nan),
                 'MCC': skmetric.matthews_corrcoef}
 
 mean = lambda tensor, weights: (tensor @ weights) / weights.sum()
@@ -26,9 +31,16 @@ class ClassificationTask:
     '''Multi-task classification (for multiple taxonomic levels)'''
 
     @staticmethod
+<<<<<<< HEAD
     def train(model, data, epochs, loss=torch.nn.CrossEntropyLoss(), 
               batch_size=64, optimizer=None, metrics=EVAL_METRICS, 
               valid_split=0.2, weight_schedule=None):
+=======
+    def train(model, train_data, valid_data=None, epochs=100, loss=None,
+              batch_size=64, sampler=None, optimizer=None, metrics=EVAL_METRICS, 
+              weight_schedule=None, warmup_steps=None, mixed_precision=False, 
+              wandb_config={}, wandb_name=None):
+>>>>>>> master
         '''Trains a neural network to classify ITS sequences
   
         Parameters
@@ -54,16 +66,42 @@ class ClassificationTask:
             Data proportion be used for validation (default is 0.2)
         weight_schedule:
             Factors by which each level should be weighted in loss per epoch 
-            (default is Constant([1,1,1,1,1,1]))'''
+            (default is Constant([1,1,1,1,1,1]))
+        warmup_steps: int | NoneType
+            When specified, the lr increases linearly for the first warmup_steps 
+            then decreases proportionally to 1/sqrt(step_number). Works only for
+            models with d_model attribute (e.g. BERT) (default is 0).
+        mixed_precision: bool
+            Whether or not to use mixed precision for efficient memory
+            utilization (default is False)
+        wandb_config: dict
+            Extra information to be added to weights and biases config data.
+        wandb_name: str
+            Name of the run to be displayed on weights and biases.'''
         
+<<<<<<< HEAD
         # Initializing/setting parameter values
         if type(loss) != list:
             loss = [loss for i in range(len(model.target_levels))]
+=======
+        # PARAMETER INITIALIZATION
+        # Data and sampling
+        if sampler is None:
+            sampler = torch.utils.data.RandomSampler(train_data)
+        train_dataloader = tud.DataLoader(train_data, batch_size=batch_size, 
+                                          sampler=sampler)
+
+        # Loss and optimizer                                  
+        if loss is None:
+            loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
+                    for i in range(6)]
+>>>>>>> master
         if optimizer is None:
             optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
                                         weight_decay=0.0001)
         if weight_schedule is None:
             weight_schedule = ws.Constant([1]*len(model.target_levels))
+<<<<<<< HEAD
         train_data, valid_data = tud.random_split(data, 
                                                   [1-valid_split, valid_split])
         train_dataloader = tud.DataLoader(train_data, batch_size=batch_size, 
@@ -71,45 +109,85 @@ class ClassificationTask:
         metrics = {'Loss': loss} | metrics
         history = ClassificationTask.history_init(model.target_levels,
                                                            metrics, valid_split)
+=======
+        if warmup_steps is None: # Constant learning rate as default
+            lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+                        optimizer, lambda step: 0.0001) 
+        else: # Initialize lr scheduler if warmup_steps is specified
+            schedule = training.LrSchedule(model.d_model, warmup_steps)
+            lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+                                  optimizer, lambda step: schedule.get_lr(step))
+>>>>>>> master
 
-        # Training
-        t0 = time.time()
-        print("Training...") if utils.VERBOSE > 0 else None
+        # Mixed precision
+        if mixed_precision and utils.DEVICE.type=='cuda': # Only works on cuda
+            scaler = torch.cuda.amp.grad_scaler.GradScaler()
+        else:
+            scaler = training.DummyScaler() # Dummy object when turned off
+        prec = torch.float32 # Standard precision
+        if mixed_precision and utils.DEVICE.type=='cuda':
+            prec = torch.float16
+
+        # Other configurations
+        metrics = {'Loss': loss, **metrics}
+        log_columns = ClassificationTask.wandb_log_columns(model.target_levels, 
+                                              metrics, (valid_data is not None))
+        wandb_run = ClassificationTask.wandb_init(train_data, valid_data, model, 
+            optimizer, weight_schedule, sampler, loss, batch_size, epochs, 
+            warmup_steps, mixed_precision, wandb_config, wandb_name)
+        
+        # TRAINING LOOP
+        print("Training classification task...") if utils.VERBOSE > 0 else None
         for epoch in tqdm(range(epochs)):
             model.train()
             w = weight_schedule(epoch).to(utils.DEVICE)
-            train_loss = torch.zeros(len(model.target_levels)).to(utils.DEVICE)
             for (x,y) in train_dataloader:
                 # Make a prediction
                 x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
-                y_pred = model(x)
-                # Learning step
-                losses = torch.cat([loss[lvl](y_pred[i], y[:,lvl]).reshape(1)
-                                  for i, lvl in enumerate(model.target_levels)])
-                mean_loss = mean(losses, w)
                 optimizer.zero_grad()
-                mean_loss.backward()
+                with torch.autocast(device_type=utils.DEVICE.type, dtype=prec):
+                    y_pred = model(x)
+                    # Learning step
+                    losses = torch.cat([loss[lvl](y_pred[i],y[:,lvl]).reshape(1)
+                                  for i, lvl in enumerate(model.target_levels)])
+                    mean_loss = mean(losses, w)
+                scaler.scale(mean_loss).backward() # Calculate gradients
+                scaler.unscale_(optimizer) # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-                optimizer.step()
-                # Update metrics
-                train_loss += x.size(0)*losses.detach()
+                scaler.step(optimizer) # Apply optimizer 
+                lr_scheduler.step() # Update learning rate
+                scaler.update()
 
             # Validation results
+<<<<<<< HEAD
             scores = ((train_loss) / len(train_data)).detach().cpu().numpy()
             if valid_split > 0:
+=======
+            scores = ClassificationTask.evaluate(model, train_data, metrics)
+            scores = np.concatenate([[epoch+1], scores])
+            if valid_data is not None:
+>>>>>>> master
                 scores = np.concatenate([scores, 
                        ClassificationTask.evaluate(model, valid_data, metrics)])
-            scores = scores.reshape(1,-1)
-            history = pd.concat([history, 
-                                  pd.DataFrame(scores,columns=history.columns)],
-                                  ignore_index=True)
-            # TODO Currently only works when valid_data is available
-            ClassificationTask.save_history(history,metrics,model.target_levels)
+            wandb_run.log({column: score 
+                           for column, score in zip(log_columns, scores)})
 
+        # Finishing the wandb_run, getting results dataframe
         model_parameters = filter(lambda p: p.requires_grad, model.parameters())
         params = sum([np.prod(p.size()) for p in model_parameters])
-        print("Number of parameters:", params)
-        print("Training time (s): " + str(time.time()-t0))
+        wandb_run.config.update({'num_params': params})
+        wandb_run.finish(quiet=True)
+        wandb_api = wandb.Api()
+        run = wandb_api.run(f'{wandb_run.project}/{wandb_run._run_id}')
+        history = run.history(pandas=True)
+        
+        if utils.VERBOSE > 0:
+            print("Training finished, log saved to wandb (see above).")
+            print("Final accuracy scores:\n---------------------\n")
+            ClassificationTask.final_report(history,model.target_levels,'train')
+            if valid_data is not None:
+                ClassificationTask.final_report(history,model.target_levels,
+                                                'valid')
         
         return model, history
     
@@ -121,9 +199,16 @@ class ClassificationTask:
         # Initializing
         print('Evaluating...') if utils.VERBOSE > 0 else None
         data = [data] if type(data) != list else data
+<<<<<<< HEAD
         if type(loss) != list:
             loss = [loss for i in range(len(model.target_levels))]
         metrics = {'Loss': loss} | metrics
+=======
+        if loss is None:
+            loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
+                    for i in range(6)]
+        metrics = {'Loss': loss, **metrics}
+>>>>>>> master
         results = ClassificationTask.results_init(model.target_levels, metrics)
         coverage = {True: 'known', False: 'total'}
         
@@ -199,7 +284,6 @@ class ClassificationTask:
     @staticmethod
     def results_init(target_levels, metrics):
         '''Initializes an empty results dataframe with correct rows/columns'''
-        columns = ['']
         columns += [f'{metric}|{utils.LEVELS[lvl]}' for metric in metrics 
                                                        for lvl in target_levels]
         if len(target_levels) == 6:
@@ -208,6 +292,7 @@ class ClassificationTask:
         return pd.DataFrame(columns=columns)
 
     @staticmethod
+<<<<<<< HEAD
     def history_init(target_levels, metrics, valid_split):
         '''Initializes an empty history dataframe with correct columns'''
         columns = [f'Loss|train|{utils.LEVELS[lvl]}' for lvl in target_levels]
@@ -216,20 +301,49 @@ class ClassificationTask:
                            for metric in metrics for lvl in target_levels]
         if valid_split > 0 and len(target_levels) == 6:
             columns += ([f'Consistency|valid|{pair}' 
+=======
+    def wandb_log_columns(target_levels, metrics, use_valid):
+        '''Returns a list of column names for the wandb log'''
+        columns = ['Epoch']
+        for dataset in ['train', 'valid'][:int(use_valid)+1]:
+            columns +=  [f'{metric}|{dataset}|{utils.LEVELS[lvl]}' 
+                           for metric in metrics for lvl in target_levels]
+            if len(target_levels) == 6:
+                columns += ([f'Consistency|{dataset}|{pair}' 
+>>>>>>> master
                                for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
-        return pd.DataFrame(columns=columns)
+        return columns
+        
+    @staticmethod
+    def wandb_init(train_data, valid_data, model, optimizer, weight_schedule, 
+                   sampler, loss, batch_size, epochs, warmup_steps, 
+                   mixed_precision, wandb_config, wandb_name):
+        config = {
+            'task': 'classification',
+            **utils.get_config(train_data, prefix='trainset'),
+            **utils.get_config(valid_data, prefix='validset'),
+            **utils.get_config(model),
+            **utils.get_config(optimizer, prefix='opt'),
+            **utils.get_config(weight_schedule, 'weight_sched'),
+            **utils.get_config(sampler, 'sampler'),
+            **utils.get_config(loss[0], 'loss'),
+            'batch_size': batch_size, 
+            'epochs': epochs,
+            'warmup_steps': warmup_steps,
+            'mixed_precision': mixed_precision,
+            **wandb_config
+        }
+        return wandb.init(project='MycoAI ITSClassifier', config=config, 
+                          name=wandb_name, dir=utils.OUTPUT_DIR)
 
     @staticmethod
-    def save_history(history, metrics, target_levels):
-        '''Exports history file (verbose > 0), generates plots (verbose > 1)'''
-        if utils.VERBOSE > 0:
-            history.to_csv(utils.OUTPUT_DIR + '/train_scores.csv', 
-                           float_format='{:.3}'.format)
-            print("Training loss history saved.")
-        if utils.VERBOSE > 1:
-            plotter.classification_loss(history, target_levels)
-            for metric in metrics:
-                if metric != 'Loss':
-                    plotter.classification_metric(history, metric,target_levels)
-            print("Training metric plots saved.")
-        
+    def final_report(history, target_levels, train_or_valid):
+        print(train_or_valid.capitalize() + ":")
+        report = history[[f'Accuracy|{train_or_valid}|{utils.LEVELS[lvl]}' 
+                          for lvl in target_levels]]
+        columns = dict(zip(report.columns, 
+                           [utils.LEVELS[lvl] for lvl in target_levels]))
+        report = report.tail(1)
+        report.rename(columns=columns, inplace=True)
+        report.reset_index(drop=True, inplace=True)
+        print(report)

@@ -3,4 +3,6 @@ data/*
 /src/testing.py
 results*
 deathcap*
+TODO
+wandb*
 .idea

@@ -2,8 +2,10 @@
 
 import torch
 import numpy as np
-from .. import utils
+import pandas as pd
+from .. import utils, data
 from .output_heads import SingleHead, MultiHead, ChainedMultiHead, Inference
+from .transformers import BERT
 
 class ITSClassifier(torch.nn.Module): 
     '''Fungal taxonomic classification model based on ITS sequences. 
@@ -15,7 +17,7 @@ class ITSClassifier(torch.nn.Module):
 
         Parameters
         ----------
-        base_arch: Architecture subclass
+        base_arch: torch.nn.Module
             The body for the neural network
         dna_encoder: DNAEncoder
             The DNA encoder used for the expected input
@@ -35,11 +37,15 @@ class ITSClassifier(torch.nn.Module):
         self.target_levels = self._get_target_level_indices(target_levels)
         self.dna_encoder = dna_encoder
         self.tax_encoder = tax_encoder 
-        self.classes = torch.tensor([len(self.tax_encoder.labels[i]) 
-                                     for i in self.target_levels])
+        self.classes = torch.tensor(
+            [len(self.tax_encoder.lvl_encoders[i].classes_)
+             for i in self.target_levels])
         self.base_arch = base_arch
         self.dropout = torch.nn.Dropout(dropout)
         
+        if type(self.base_arch) == BERT:
+            self.base_arch.set_mode('classification')
+
         # The fully connected part
         fcn = []
         for i in range(len(fcn_layers)):
@@ -49,15 +55,14 @@ class ITSClassifier(torch.nn.Module):
         if len(fcn_layers) > 0:
             self.bottleneck_index = np.argmin(fcn_layers)
         
-        match output:
-            case 'single':
-                self.output = SingleHead(self.classes)
-            case 'multi':
-                self.output = MultiHead(self.classes)
-            case 'chained':
-                self.output = ChainedMultiHead(self.classes)
-            case 'inference':
-                self.output = Inference(self.classes, self.tax_encoder)
+        if output == 'single':
+            self.output = SingleHead(self.classes)
+        elif 'multi':
+            self.output = MultiHead(self.classes)
+        elif 'chained':
+            self.output = ChainedMultiHead(self.classes)
+        elif 'inference':
+            self.output = Inference(self.classes, self.tax_encoder)
 
         self.to(utils.DEVICE)
 
@@ -82,14 +87,33 @@ class ITSClassifier(torch.nn.Module):
             x = self.fcn[i](x)
         return x
 
-    def predict(self, data, return_as='tensor', return_labels=False):
+    def classify(self, input_data):
+        '''Classifies sequences in FASTA file, DataPrep or Dataset object,
+        returns a pandas DataFrame.'''
+
+        if type(input_data) == str:
+            input_data = data.DataPrep(input_data, tax_parser=None)
+        if type(input_data) == data.DataPrep:
+            input_data = input_data.encode_dataset(self.dna_encoder)
+        if type(input_data) != data.Dataset:
+            raise ValueError("Input_data should be a FASTA filepath, " +
+                             "DataPrep or Dataset object.")
+
+        predictions = self._predict(input_data)
+        classes = []
+        for i, prediction in enumerate(predictions):
+            pred_argmax = torch.argmax(prediction, dim=1).cpu().numpy()
+            classes.append(pred_argmax)
+        classes = np.stack(classes, axis=1)
+        decoding = self.tax_encoder.decode(classes)
+        return pd.DataFrame(decoding, columns=[utils.LEVELS[i] + '_pred'
+                                                for i in self.target_levels])
+
+    def _predict(self, data, return_labels=False):
         '''Returns predictions for entire dataset.
         
         data: mycoai.Dataset
             Deathcap Dataset object containing sequence and taxonomy Tensors
-        return_as: ['tensor'|'dataframe']
-            Whether to return the predictions as list of tensors (a tensor per
-            level) or as a tabular pandas Dataframe.
         return_labels: bool
             Whether to include the true target labels in the return'''
 
@@ -106,10 +130,18 @@ class ITSClassifier(torch.nn.Module):
                 labels.append(y)
             predictions = [torch.cat(level) for level in predictions]
         
-        if return_as == 'tensor':
-            if return_labels:
+        if return_labels:
                 return predictions, torch.cat(labels)
-            else:
-                return predictions
-        elif return_as == 'dataframe':
-            pass # TODO decode predictions into strings
+        else:
+            return predictions
+
+    def get_config(self):
+        '''Returns configuration dictionary of this instance.'''
+        dna_encoder = utils.get_config(self.dna_encoder, 'dna_encoder')
+        base_arch = utils.get_config(self.base_arch, 'base_arch')
+        config = {
+            'fcn': [self.fcn[i].out_features for i in range(0,len(self.fcn),2)],
+            'output_type': utils.get_type(self.output),
+            'target_levels': self.target_levels
+        }
+        return {**dna_encoder, **base_arch, **config}

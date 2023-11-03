@@ -1,9 +1,8 @@
-"""Documentation about mycoai"""
-import logging
+import torch
+from . import utils
 
-
-logging.getLogger(__name__).addHandler(logging.NullHandler())
-
-__author__ = "Nauman Ahmed"
-__email__ = "n.ahmed@esciencecenter.nl"
-__version__ = "1.0"
+# Set up device (GPU if available)
+if torch.cuda.is_available():
+    utils.DEVICE = torch.device('cuda')
+else:
+    utils.DEVICE = torch.device('cpu')

@@ -2,6 +2,7 @@
 the taxon levels, depending on the current training epoch.'''
 
 import torch
+from .. import utils
 
 class Constant:
     '''Constant taxon level weights throughout all training epochs.'''
@@ -11,6 +12,10 @@ class Constant:
 
     def __call__(self, epoch):
         return self.weights
+    
+    def get_config(self):
+        return {'type':    utils.get_type(self),
+                'weights': self.weights}
 
 class Curriculum:
     '''Gradually increases task difficulty/specifity.
@@ -48,6 +53,10 @@ class Curriculum:
                        [self.low]*(len(self.thresholds)-1-self.i))
         return torch.tensor(weights, dtype=torch.float32)
 
+    def get_config(self):
+        return {'type':       utils.get_type(self),
+                'thresholds': self.thresholds}
+
 class Alternating:
     '''Focus on a different taxon level with each epoch'''
 
@@ -60,3 +69,6 @@ class Alternating:
         i = epoch % self.n_levels
         weights = [self.low]*i + [self.high] + [self.low]*(self.n_levels-1-i)
         return torch.tensor(weights, dtype=torch.float32)
+    
+    def get_config(self):
+        return {'type': utils.get_type(self)}
