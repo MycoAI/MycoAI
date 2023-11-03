@@ -3,3 +3,4 @@ data/*
 /src/testing.py
 results*
 deathcap*
+.idea
