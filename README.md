@@ -284,7 +284,7 @@ A deep ITS classifier can be trained on labelled data by using the
 | --- | --- | --- |
 | `model` | Neural network | `mycoai.models.ITSClassifier` | 
 | `train_data` | Dataset containing encoded ITS sequences for training | `mycoai.data.Dataset` | 
-| `valid_data` | If provided, uses this dataset containing encoded ITS sequences for validation | `mycoai.data.Dataset` | 
+| `valid_data` | If provided, uses this dataset containing encoded ITS sequences for validation | `mycoai.data.Dataset`, default is `None` | 
 | `epochs` | Number of training iterations | `int`, default is 100 | 
 | `loss` | To-be-optimized loss function (or list of functions per level) | Callable or list of callables per level, default is `CrossEntropyLoss` | 
 | `batch_size` | Number of training examples per optimization step | `int`, default is 64 |
@@ -292,9 +292,9 @@ A deep ITS classifier can be trained on labelled data by using the
 | `optimizer` | Optimization strategy | `torch.optim`, default is Adam | 
 | `metrics ` | Evaluation metrics to report during training, provided as dictionary with metric name as key and function as value | `dict{str:callable}`, default is accuracy, balanced acuracy, precision, recall, f1, and mcc. | 
 | `weight_schedule` | Factors by which each level should be weighted in loss per epoch | `mycoai.training.weight_schedules`, default is `Constant([1,1,1,1,1,1])` |  
-| `warmup_steps` | When specified, the lr increases linearly for the first `warmup_steps` then decreases proportionally to $1/\sqrt{step}$. Works only for models with `d_model` attribute (e.g. BERT) | `int` or `NoneType`, default is `None` |  
+| `warmup_steps` | When specified, the lr increases linearly for the first `warmup_steps` then decreases proportionally to $1/\sqrt{step}$. Works only for models with `d_model` attribute (e.g. BERT) | `int`, default is `None` |  
 | `wandb_config` | Allows the user to add extra information to the weights and biases config data. | `dict{str:str}`, default is `{}` | 
-| `wandb_name` | Name of the run to be displayed on weights and biases. Will choose a random name if unspecified. | `str` or `NoneType`, default is `None` |
+| `wandb_name` | Name of the run to be displayed on weights and biases. Will choose a random name if unspecified. | `str`, default is `None` |
 
 <!-- 
 TODO: explain some of the arguments in more detail

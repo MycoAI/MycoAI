@@ -88,12 +88,16 @@ class BERT(torch.nn.Module):
         return torch.softmax(src, dim=-1)
     
     def get_config(self):
+        config = {}
+        if hasattr(self, 'pretraining'):
+            config = {'pretraining': self.pretraining}
         return {
-            'type':    utils.get_type(self),
-            'd_model': self.d_model,
-            'd_ff':    self.d_ff,
-            'h':       self.h,
-            'N':       self.N
+            'type':         utils.get_type(self),
+            'd_model':      self.d_model,
+            'd_ff':         self.d_ff,
+            'h':            self.h,
+            'N':            self.N,
+            **config
         }
 
 

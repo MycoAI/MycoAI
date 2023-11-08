@@ -33,8 +33,8 @@ class ClassificationTask:
     @staticmethod
     def train(model, train_data, valid_data=None, epochs=100, loss=None,
               batch_size=64, sampler=None, optimizer=None, metrics=EVAL_METRICS, 
-              weight_schedule=None, warmup_steps=None, mixed_precision=False, 
-              wandb_config={}, wandb_name=None):
+              weight_schedule=None, warmup_steps=None, wandb_config={}, 
+              wandb_name=None):
         '''Trains a neural network to classify ITS sequences
   
         Parameters
@@ -67,9 +67,6 @@ class ClassificationTask:
             When specified, the lr increases linearly for the first warmup_steps 
             then decreases proportionally to 1/sqrt(step_number). Works only for
             models with d_model attribute (e.g. BERT) (default is 0).
-        mixed_precision: bool
-            Whether or not to use mixed precision for efficient memory
-            utilization (default is False)
         wandb_config: dict
             Extra information to be added to weights and biases config data.
         wandb_name: str
@@ -81,13 +78,13 @@ class ClassificationTask:
             sampler = torch.utils.data.RandomSampler(train_data)
         train_dataloader = tud.DataLoader(train_data, batch_size=batch_size, 
                                           sampler=sampler)
-
+        
         # Loss and optimizer                                  
         if loss is None:
             loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
                     for i in range(6)]
         if optimizer is None:
-            optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
+            optimizer = torch.optim.Adam(model.parameters(), lr=1, 
                                         weight_decay=0.0001)
         if weight_schedule is None:
             weight_schedule = ws.Constant([1]*len(model.target_levels))
@@ -95,18 +92,17 @@ class ClassificationTask:
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                         optimizer, lambda step: 0.0001) 
         else: # Initialize lr scheduler if warmup_steps is specified
-            schedule = training.LrSchedule(model.d_model, warmup_steps)
+            schedule = training.LrSchedule(model.d_model, warmup_steps) 
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                                   optimizer, lambda step: schedule.get_lr(step))
 
         # Mixed precision
-        if mixed_precision and utils.DEVICE.type=='cuda': # Only works on cuda
+        if utils.DEVICE.type == 'cuda' and utils.MIXED_PRECISION:
+            prec = torch.float16
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
         else:
-            scaler = training.DummyScaler() # Dummy object when turned off
-        prec = torch.float32 # Standard precision
-        if mixed_precision and utils.DEVICE.type=='cuda':
-            prec = torch.float16
+            prec = torch.bfloat16 # Not used since autocast is disabled
+            scaler = training.DummyScaler() # Does nothing
 
         # Other configurations
         metrics = {'Loss': loss, **metrics}
@@ -114,30 +110,36 @@ class ClassificationTask:
                                               metrics, (valid_data is not None))
         wandb_run = ClassificationTask.wandb_init(train_data, valid_data, model, 
             optimizer, weight_schedule, sampler, loss, batch_size, epochs, 
-            warmup_steps, mixed_precision, wandb_config, wandb_name)
+            warmup_steps, wandb_config, wandb_name)
         
         # TRAINING LOOP
         print("Training classification task...") if utils.VERBOSE > 0 else None
         for epoch in tqdm(range(epochs)):
+
+            if epoch == 1: # Errors for epoch 0 due to torch.nn.Lazy modules
+                wandb_run.watch(model, log='all')
             model.train()
             w = weight_schedule(epoch).to(utils.DEVICE)
+            
             for (x,y) in train_dataloader:
                 # Make a prediction
                 x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
                 optimizer.zero_grad()
-                with torch.autocast(device_type=utils.DEVICE.type, dtype=prec):
+                with torch.autocast(device_type=utils.DEVICE.type, dtype=prec, 
+                                    enabled=utils.MIXED_PRECISION):
                     y_pred = model(x)
                     # Learning step
                     losses = torch.cat([loss[lvl](y_pred[i],y[:,lvl]).reshape(1)
-                                  for i, lvl in enumerate(model.target_levels)])
+                                    for i, lvl in enumerate(model.target_levels)])
                     mean_loss = mean(losses, w)
                 scaler.scale(mean_loss).backward() # Calculate gradients
                 scaler.unscale_(optimizer) # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 scaler.step(optimizer) # Apply optimizer 
-                lr_scheduler.step() # Update learning rate
+                optimizer.step()
+                lr_scheduler.step() # Update learning rate 
                 scaler.update()
-
+                
             # Validation results
             scores = ClassificationTask.evaluate(model, train_data, metrics)
             scores = np.concatenate([[epoch+1], scores])
@@ -158,7 +160,7 @@ class ClassificationTask:
         
         if utils.VERBOSE > 0:
             print("Training finished, log saved to wandb (see above).")
-            print("Final accuracy scores:\n---------------------\n")
+            print("Final accuracy scores:\n---------------------")
             ClassificationTask.final_report(history,model.target_levels,'train')
             if valid_data is not None:
                 ClassificationTask.final_report(history,model.target_levels,
@@ -271,11 +273,11 @@ class ClassificationTask:
                 columns += ([f'Consistency|{dataset}|{pair}' 
                                for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
         return columns
-        
+
     @staticmethod
     def wandb_init(train_data, valid_data, model, optimizer, weight_schedule, 
                    sampler, loss, batch_size, epochs, warmup_steps, 
-                   mixed_precision, wandb_config, wandb_name):
+                   wandb_config, wandb_name):
         config = {
             'task': 'classification',
             **utils.get_config(train_data, prefix='trainset'),
@@ -288,8 +290,8 @@ class ClassificationTask:
             'batch_size': batch_size, 
             'epochs': epochs,
             'warmup_steps': warmup_steps,
-            'mixed_precision': mixed_precision,
-            **wandb_config
+            **wandb_config,
+            **utils.get_config()
         }
         return wandb.init(project='MycoAI ITSClassifier', config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)

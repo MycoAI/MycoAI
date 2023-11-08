@@ -1,5 +1,6 @@
 '''Contains constants and helper functions to support DeathCap.'''
 
+import git
 import torch
 import warnings
 import wandb
@@ -14,6 +15,7 @@ UNKNOWN_STR = '?'
 UNKNOWN_INT = 9999999
 PRED_BATCH_SIZE = 1000
 MAX_PER_EPOCH = 500000
+MIXED_PRECISION = True
 MAX_LEN = 5000 # Max length of positional encodings transformers
 # NOTE Be careful with changing this one: BPE assumes TOKENS['MASK'] == 0
 TOKENS = {'MASK':0, 'CLS':1, 'SEP':2, 'PAD':3, 'UNK':4}
@@ -30,19 +32,23 @@ def set_output_dir(path, parent=''):
 
 def set_device(name):
     '''Sets (global) PyTorch device (either `'cuda'` or `'cpu'`)'''
-    global DEVICE
+    global DEVICE, MIXED_PRECISION
     if name == 'cuda' and not torch.cuda.is_available():
         name = 'cpu'
         warnings.warn('No cuda-enabled GPUs available, using CPU')
+    if name == 'cpu':
+        MIXED_PRECISION = False
     DEVICE = torch.device(name)
 
 def get_type(object):
     '''Get type of object as str without including parent modules'''
     return str(type(object)).split('.')[-1][:-2]
 
-def get_config(object, prefix=''):
+def get_config(object=None, prefix=''):
     '''Gets configuration data from object, if available'''
-    if prefix == 'opt':
+    if object is None:
+        config = get_general_config()
+    elif prefix == 'opt':
         config = get_opt_config(object)
     elif prefix == 'sampler':
         config = get_sampler_config(object)
@@ -81,3 +87,11 @@ def get_loss_config(loss):
     if hasattr(loss, 'sampler_correction'):
         loss_config.update({'sampler_correction': loss.sampler_correction})
     return {'type': get_type(loss), **loss_config}
+
+def get_general_config():
+    '''Gets overall configuration data'''
+    repo = git.Repo(search_parent_directories=True)
+    return {'device':           DEVICE,
+            'mixed_precision':  MIXED_PRECISION,
+            'git_commit':       repo.head.object.hexsha,
+            'max_per_epoch':    MAX_PER_EPOCH}
