@@ -14,8 +14,7 @@ class MLMTask:
     @staticmethod
     def train(model, data, epochs=100, batch_size=64, p_mlm=0.15, p_mask=0.8, 
               p_random=0.1, sampler=None, optimizer=None, warmup_steps=4000,
-              label_smoothing=0.1, mixed_precision=True, wandb_config={}, 
-              wandb_name=None):
+              label_smoothing=0.1, wandb_config={}, wandb_name=None):
         '''Trains an ITS transformer model on Masked Language Modelling task.
         
         Parameters
@@ -46,9 +45,6 @@ class MLMTask:
             proportionally to 1/sqrt(step_number) (default is 4000)
         label_smoothing: float
             Adds uncertainty to target labels as regularization (default is 0.1)
-        mixed_precision: bool
-            Whether or not to use mixed precision for efficient memory
-            utilization on GPU (default is True)
         wandb_config: dict
             Extra information to be added to weights and biases config data.
         wandb_name: str
@@ -64,7 +60,7 @@ class MLMTask:
         loss_function = torch.nn.CrossEntropyLoss( # Ignore padding
             label_smoothing=label_smoothing, ignore_index=utils.TOKENS['PAD'])
         if optimizer is None: # Use Adam as default
-            optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.1, 
                                          betas=(0.9,0.98))
         if warmup_steps is None: # Constant learning rate as default
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -74,21 +70,20 @@ class MLMTask:
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                                   optimizer, lambda step: schedule.get_lr(step))
             
-        # Mixed precision 
-        if mixed_precision and utils.DEVICE.type=='cuda': # Only works on cuda
+        # Mixed precision
+        if utils.DEVICE.type == 'cuda' and utils.MIXED_PRECISION:
+            prec = torch.float16
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
         else:
-            scaler = training.DummyScaler() # Dummy object when turned off
-        prec = torch.float32 # Standard precision
-        if mixed_precision and utils.DEVICE.type=='cuda':
-            prec = torch.float16
+            prec = torch.bfloat16 # Not used since autocast is disabled
+            scaler = training.DummyScaler() # Does nothing 
 
         # Other configurations
         model.set_mode('mlm') # Turns on MLM layer of BERT model
         wandb_run = MLMTask.wandb_init(data, model, optimizer, sampler, # wandb
             loss_function, batch_size, epochs, p_mlm, p_mask, p_random, 
-            warmup_steps, label_smoothing, mixed_precision, wandb_config, 
-            wandb_name)
+            warmup_steps, label_smoothing, wandb_config, wandb_name)
+        wandb_run.watch(model, log='all')
 
         # TRAINING LOOP
         print("Training MLM task...") if utils.VERBOSE > 0 else None
@@ -103,7 +98,8 @@ class MLMTask:
                                           p_mlm, p_mask, p_random)
                 x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
                 optimizer.zero_grad()
-                with torch.autocast(device_type=utils.DEVICE.type, dtype=prec):
+                with torch.autocast(device_type=utils.DEVICE.type, dtype=prec,
+                                    enabled=utils.MIXED_PRECISION):
                     y_pred = model(x) # Make a prediction
                     y = y.view(-1) # Flatten labels
                     y_pred = y_pred.view(-1, model.vocab_size) # Flatten 
@@ -131,7 +127,9 @@ class MLMTask:
         # Finishing the wandb_run, getting results dataframe
         wandb_run.finish(quiet=True)
         wandb_api = wandb.Api()
-        run = wandb_api.run(f'{wandb_run.project}/{wandb_run._run_id}')
+        wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
+        model.pretraining = wandb_id
+        run = wandb_api.run(wandb_id)
         history = run.history(pandas=True)
         
         return model, history
@@ -140,32 +138,32 @@ class MLMTask:
     def mask_batch(x, vocab_size, p_mlm=0.15, p_mask=0.8, p_random=0.1):
         '''Maks a batch of sequence data for MLM'''
 
-        # # Calculate boolean tensors using selection probabilities
-        # select = ((torch.rand(x.shape) < p_mlm) & # Select for MLM
-        #             (x != utils.TOKENS['PAD']) & # Can't select...
-        #             (x != utils.TOKENS['SEP']) & # ... special tokens
-        #             (x != utils.TOKENS['CLS'])) 
-        # probs = torch.rand(x.shape)
-        # masked = select & (probs < p_mask)
-        # random = select & (probs >= p_mask) & (probs < p_mask + p_random)
+        # Calculate boolean tensors using selection probabilities
+        select = ((torch.rand(x.shape) < p_mlm) & # Select for MLM
+                    (x != utils.TOKENS['PAD']) & # Can't select...
+                    (x != utils.TOKENS['SEP']) & # ... special tokens
+                    (x != utils.TOKENS['CLS'])) 
+        probs = torch.rand(x.shape)
+        masked = select & (probs < p_mask)
+        random = select & (probs >= p_mask) & (probs < p_mask + p_random)
 
         # Replace with masks/random tokens using the selection tensors
         y = x.clone() # Create a copy
-        # x[masked] = utils.TOKENS['MASK'] # Apply mask
-        # x[random] = torch.randint( # Apply random tokens
-        #     len(utils.TOKENS), # Exclude special tokens 
-        #     vocab_size,
-        #     (torch.sum(random).item(),), 
-        #     dtype=torch.long)
-        # # The rest for which select is True remains unchanged
-        # y[~select] =  utils.TOKENS['PAD'] # Pad those not selected
+        x[masked] = utils.TOKENS['MASK'] # Apply mask
+        x[random] = torch.randint( # Apply random tokens
+            len(utils.TOKENS), # Exclude special tokens 
+            vocab_size,
+            (torch.sum(random).item(),), 
+            dtype=torch.long)
+        # The rest for which select is True remains unchanged
+        y[~select] =  utils.TOKENS['PAD'] # Pad those not selected
 
         return x, y
     
     @staticmethod
     def wandb_init(data, model, optimizer, sampler, loss, batch_size, epochs, 
                    p_mlm, p_mask, p_random, warmup_steps, label_smoothing, 
-                   mixed_precision, wandb_config, wandb_name):
+                   wandb_config, wandb_name):
         config = {
             'task': 'mlm',
             **utils.get_config(data, prefix='trainset'),
@@ -180,8 +178,8 @@ class MLMTask:
             'p_random': p_random,
             'warmup_steps': warmup_steps,
             'label_smoothing': label_smoothing,
-            'mixed_precision': mixed_precision,
-            **wandb_config
+            **wandb_config,
+            **utils.get_config()
         }
         return wandb.init(project='MycoAI ITSClassifier', config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
