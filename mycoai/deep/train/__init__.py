@@ -1,10 +1,6 @@
 import wandb
-from .classification import ClassificationTask
-from .pretraining import MLMTask, NSPTask
-
-# Set up weights & biases
-wandb.login('allow')
-
+from mycoai.deep.train.deep_its_trainer import DeepITSTrainer
+from mycoai.deep.train.masked_language_modeling import MLMTrainer
 
 class LrSchedule:
     '''Linearly increases the learning rate for the first warmup_steps, then

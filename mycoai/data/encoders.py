@@ -8,7 +8,7 @@ import sklearn
 import itertools
 import numpy as np
 import sentencepiece as spm
-from . import utils
+from mycoai import utils
 
 IUPAC_ENCODING = {'A':[1,    0,    0,    0   ],
                   'C':[0,    1,    0,    0   ],
@@ -32,7 +32,7 @@ class DNAEncoder:
     def __init__(self):
         pass
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         raise RuntimeError('encode method not implemented for base class.')
 
 
@@ -42,11 +42,11 @@ class FourDimDNA(DNAEncoder):
     def __init__(self, length=1000):
         self.length = length
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes a single data row, returns list of four-channel encodings'''
 
-        encoding = ([IUPAC_ENCODING[data_row['sequence'][i]]
-               for i in range(min(len(data_row['sequence']), self.length))])
+        encoding = ([IUPAC_ENCODING[sequence[i]]
+               for i in range(min(len(sequence), self.length))])
         encoding = encoding + [[0,0,0,0]]*(self.length-len(encoding)) # Padding
         return torch.tensor(encoding, dtype=torch.float32).transpose(1,0)
 
@@ -62,7 +62,7 @@ class BytePairEncoder(DNAEncoder):
         if utils.VERBOSE > 0:
             print('Initializing Byte Pair Encoder...')
         mem_stream = io.BytesIO() # In-memory byte stream to save model to
-        sequences = iter(data.data['sequence'].tolist()) # Sentence iterator object
+        sequences = iter(data.data['sequence'].tolist()) # Sentence iterator
         spm.SentencePieceTrainer.train(sentence_iterator=sequences, 
                                        vocab_size=vocab_size,
                                        model_type='bpe',
@@ -79,9 +79,9 @@ class BytePairEncoder(DNAEncoder):
         self.sp = spm.SentencePieceProcessor(model_proto=mem_stream.getvalue())
         self.length = length
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes a single data row using the BPE encoder'''
-        seq = re.sub('[^ACTG]', '?', data_row['sequence'])
+        seq = re.sub('[^ACTG]', '?', sequence)
         encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
         encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']] 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
@@ -121,10 +121,10 @@ class KmerTokenizer(KmerEncoder):
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
         self.vocab_size = len(self.map) + min_token
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes data row, returns tensor of (kmer-based) token encodings'''
         encoding = [utils.TOKENS['CLS']]
-        seq = self._seq_preprocess(data_row['sequence'])
+        seq = self._seq_preprocess(sequence)
         i = 0
         while i + self.k <= len(seq) and len(encoding) < self.length-1:
             encoding.append(self.map[seq[i:i+self.k]]) # Add encoding
@@ -151,10 +151,10 @@ class KmerOneHot(KmerEncoder):
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
         self.vocab_size = len(self.map) + min_token
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes data row, returns tensor of (kmer-based) one-hot encodings'''
         encoding = [self._get_onehot_vector(utils.TOKENS['CLS'])] 
-        seq = self._seq_preprocess(data_row['sequence'])
+        seq = self._seq_preprocess(sequence)
         i = 0
         while i + self.k <= len(seq) and len(encoding) < self.length-1:
             encoding.append(self._get_onehot_vector(self.map[seq[i:i+self.k]]))
@@ -184,9 +184,9 @@ class KmerSpectrum(KmerEncoder):
         self.map = {word:i for i, word in enumerate(self.words)}
         self.normalize = normalize
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes a single data row, returns k-mer frequences'''
-        seq = self._seq_preprocess(data_row['sequence'])
+        seq = self._seq_preprocess(sequence)
         freqs = np.zeros(len(self.map)) # Initialize frequency vector
         for i in range(0, len(seq)-self.k+1, self.stride): # Count
             freqs[self.map[seq[i:i+self.k]]] += 1

@@ -13,7 +13,7 @@ BERT:
 
 import math
 import torch
-from .. import utils
+from mycoai import utils
 
 class BERT(torch.nn.Module):
     '''BERT base model, transformer encoder to be used for various tasks'''

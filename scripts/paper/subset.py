@@ -1,12 +1,12 @@
 '''Creates a data subset that is used for training'''
 
 from mycoai import utils
-from mycoai.data import DataPrep
-from mycoai.encoders import FourDimDNA, BytePairEncoder
+from mycoai.data import Data
+from mycoai.data.encoders import FourDimDNA, BytePairEncoder
 import mycoai.plotter as plotter
 
 utils.set_output_dir('subset', 'results')
-data = DataPrep('/data/luuk/UNITE_public_25.07.2023_test_removed.fasta')
+data = Data('/data/luuk/UNITE_public_25.07.2023_test_removed.fasta')
 data = data.sequence_length_filter()
 data = data.sequence_quality_filter()
 data = data.class_filter('species', min_samples=5, max_classes=2500)

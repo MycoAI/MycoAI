@@ -1,13 +1,14 @@
-'''Contains the ITSClassifier class for complete ITS classification models.'''
+'''Contains the DeepITSClassifier class for complete ITS classification models.'''
 
 import torch
 import numpy as np
 import pandas as pd
-from .. import utils, data
-from .output_heads import SingleHead, MultiHead, ChainedMultiHead, Inference
-from .transformers import BERT
+from mycoai import utils, data
+from mycoai.deep.models.output_heads import SingleHead, MultiHead, Inference
+from mycoai.deep.models.output_heads import ChainedMultiHead
+from mycoai.deep.models.transformers import BERT
 
-class ITSClassifier(torch.nn.Module): 
+class DeepITSClassifier(torch.nn.Module): 
     '''Fungal taxonomic classification model based on ITS sequences. 
     Supports several architecture variations.'''
 
@@ -88,16 +89,16 @@ class ITSClassifier(torch.nn.Module):
         return x
 
     def classify(self, input_data):
-        '''Classifies sequences in FASTA file, DataPrep or Dataset object,
+        '''Classifies sequences in FASTA file, Data or TensorData object,
         returns a pandas DataFrame.'''
 
         if type(input_data) == str:
-            input_data = data.DataPrep(input_data, tax_parser=None)
-        if type(input_data) == data.DataPrep:
+            input_data = data.Data(input_data, tax_parser=None)
+        if type(input_data) == data.Data:
             input_data = input_data.encode_dataset(self.dna_encoder)
-        if type(input_data) != data.Dataset:
+        if type(input_data) != data.TensorData:
             raise ValueError("Input_data should be a FASTA filepath, " + 
-                             "DataPrep or Dataset object.")
+                             "Data or TensorData object.")
         
         predictions = self._predict(input_data)
         classes = []
@@ -112,8 +113,8 @@ class ITSClassifier(torch.nn.Module):
     def _predict(self, data, return_labels=False):
         '''Returns predictions for entire dataset.
         
-        data: mycoai.Dataset
-            Deathcap Dataset object containing sequence and taxonomy Tensors
+        data: mycoai.TensorData
+            Deathcap TensorData object containing sequence and taxonomy Tensors
         return_labels: bool
             Whether to include the true target labels in the return'''
 

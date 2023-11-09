@@ -10,8 +10,8 @@ import sklearn.metrics as skmetric
 from functools import partial
 from tqdm import tqdm
 from mycoai import utils, plotter
-from mycoai import training
-from mycoai.training import weight_schedules as ws
+from mycoai.deep import train
+from mycoai.deep.train import weight_schedules as ws
 
 
 EVAL_METRICS = {'Accuracy': skmetric.accuracy_score,
@@ -27,8 +27,8 @@ EVAL_METRICS = {'Accuracy': skmetric.accuracy_score,
 mean = lambda tensor, weights: (tensor @ weights) / weights.sum()
 
 
-class ClassificationTask:
-    '''Multi-task classification (for multiple taxonomic levels)'''
+class DeepITSTrainer:
+    '''Multi-class classification (for multiple taxonomic levels)'''
 
     @staticmethod
     def train(model, train_data, valid_data=None, epochs=100, loss=None,
@@ -41,9 +41,9 @@ class ClassificationTask:
         ----------
         model: torch.nn.Module
             Neural network architecture
-        train_data: mycoai.data.Dataset
+        train_data: mycoai.data.TensorData
             Preprocessed dataset containing ITS sequences for training
-        valid_data: mycoai.data.Dataset
+        valid_data: mycoai.data.TensorData
             Preprocessed dataset containing ITS sequences for validation   
         epochs: int
             Number of training iterations
@@ -92,7 +92,7 @@ class ClassificationTask:
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                         optimizer, lambda step: 0.0001) 
         else: # Initialize lr scheduler if warmup_steps is specified
-            schedule = training.LrSchedule(model.d_model, warmup_steps) 
+            schedule = train.LrSchedule(model.d_model, warmup_steps) 
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                                   optimizer, lambda step: schedule.get_lr(step))
 
@@ -102,13 +102,13 @@ class ClassificationTask:
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
         else:
             prec = torch.bfloat16 # Not used since autocast is disabled
-            scaler = training.DummyScaler() # Does nothing
+            scaler = train.DummyScaler() # Does nothing
 
         # Other configurations
         metrics = {'Loss': loss, **metrics}
-        log_columns = ClassificationTask.wandb_log_columns(model.target_levels, 
+        log_columns = DeepITSTrainer.wandb_log_columns(model.target_levels, 
                                               metrics, (valid_data is not None))
-        wandb_run = ClassificationTask.wandb_init(train_data, valid_data, model, 
+        wandb_run = DeepITSTrainer.wandb_init(train_data, valid_data, model, 
             optimizer, weight_schedule, sampler, loss, batch_size, epochs, 
             warmup_steps, wandb_config, wandb_name)
         
@@ -130,7 +130,7 @@ class ClassificationTask:
                     y_pred = model(x)
                     # Learning step
                     losses = torch.cat([loss[lvl](y_pred[i],y[:,lvl]).reshape(1)
-                                    for i, lvl in enumerate(model.target_levels)])
+                                  for i, lvl in enumerate(model.target_levels)])
                     mean_loss = mean(losses, w)
                 scaler.scale(mean_loss).backward() # Calculate gradients
                 scaler.unscale_(optimizer) # Unscale before clipping
@@ -141,11 +141,11 @@ class ClassificationTask:
                 scaler.update()
                 
             # Validation results
-            scores = ClassificationTask.evaluate(model, train_data, metrics)
+            scores = DeepITSTrainer.evaluate(model, train_data, metrics)
             scores = np.concatenate([[epoch+1], scores])
             if valid_data is not None:
                 scores = np.concatenate([scores, 
-                       ClassificationTask.evaluate(model, valid_data, metrics)])
+                       DeepITSTrainer.evaluate(model, valid_data, metrics)])
             wandb_run.log({column: score 
                            for column, score in zip(log_columns, scores)})
 
@@ -161,9 +161,9 @@ class ClassificationTask:
         if utils.VERBOSE > 0:
             print("Training finished, log saved to wandb (see above).")
             print("Final accuracy scores:\n---------------------")
-            ClassificationTask.final_report(history,model.target_levels,'train')
+            DeepITSTrainer.final_report(history,model.target_levels,'train')
             if valid_data is not None:
-                ClassificationTask.final_report(history,model.target_levels,
+                DeepITSTrainer.final_report(history,model.target_levels,
                                                 'valid')
         
         return model, history
@@ -180,13 +180,13 @@ class ClassificationTask:
             loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
                     for i in range(6)]
         metrics = {'Loss': loss, **metrics}
-        results = ClassificationTask.results_init(model.target_levels, metrics)
+        results = DeepITSTrainer.results_init(model.target_levels, metrics)
         coverage = {True: 'known', False: 'total'}
         
         for i in range(len(data)): # Looping over datasets and evaluating
             for ignore_uknowns in [True, False]:
                 name = [f'Test set {i} ({coverage[ignore_uknowns]})']
-                result = list(ClassificationTask.evaluate(model, data[i], 
+                result = list(DeepITSTrainer.evaluate(model, data[i], 
                                                        metrics, ignore_uknowns))
                 result = pd.DataFrame([name + result], columns=results.columns)
                 results = pd.concat([results, result])
@@ -204,7 +204,7 @@ class ClassificationTask:
         
         Parameters
         ----------
-        model: ITSClassifier
+        model: DeepITSClassifier
             The to-be-evaluated neural network
         data: UniteData
             Test data
@@ -231,7 +231,7 @@ class ClassificationTask:
                                                   argmax_y_pred.cpu().numpy()))
         
         if len(model.target_levels) == 6:
-            cons = ClassificationTask.consistency(y_pred, model.tax_encoder)
+            cons = DeepITSTrainer.consistency(y_pred, model.tax_encoder)
             return np.array(results + cons)
         else:
             return np.array(results)
@@ -293,7 +293,7 @@ class ClassificationTask:
             **wandb_config,
             **utils.get_config()
         }
-        return wandb.init(project='MycoAI ITSClassifier', config=config, 
+        return wandb.init(project='MycoAI DeepITSClassifier', config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
 
     @staticmethod
