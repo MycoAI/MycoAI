@@ -6,23 +6,11 @@ import wandb
 import numpy as np
 import pandas as pd
 import torch.utils.data as tud
-import sklearn.metrics as skmetric
-from functools import partial
 from tqdm import tqdm
-from mycoai import utils, plotter
+from mycoai import utils
 from mycoai.deep import train
 from mycoai.deep.train import weight_schedules as ws
 
-
-EVAL_METRICS = {'Accuracy': skmetric.accuracy_score,
-                'Accuracy (balanced)': skmetric.balanced_accuracy_score,
-                'Precision': partial(skmetric.precision_score, 
-                                     average='macro', zero_division=np.nan),
-                'Recall': partial(skmetric.recall_score, 
-                                  average='macro', zero_division=np.nan),
-                'F1': partial(skmetric.f1_score, 
-                              average='macro', zero_division=np.nan),
-                'MCC': skmetric.matthews_corrcoef}
 
 mean = lambda tensor, weights: (tensor @ weights) / weights.sum()
 
@@ -32,9 +20,9 @@ class DeepITSTrainer:
 
     @staticmethod
     def train(model, train_data, valid_data=None, epochs=100, loss=None,
-              batch_size=64, sampler=None, optimizer=None, metrics=EVAL_METRICS, 
-              weight_schedule=None, warmup_steps=None, wandb_config={}, 
-              wandb_name=None):
+              batch_size=64, sampler=None, optimizer=None, 
+              metrics=utils.EVAL_METRICS, weight_schedule=None, 
+              warmup_steps=None, wandb_config={}, wandb_name=None):
         '''Trains a neural network to classify ITS sequences
   
         Parameters
@@ -83,26 +71,29 @@ class DeepITSTrainer:
         if loss is None:
             loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
                     for i in range(6)]
-        if optimizer is None:
-            optimizer = torch.optim.Adam(model.parameters(), lr=1, 
-                                        weight_decay=0.0001)
-        if weight_schedule is None:
-            weight_schedule = ws.Constant([1]*len(model.target_levels))
-        if warmup_steps is None: # Constant learning rate as default
-            lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                        optimizer, lambda step: 0.0001) 
+        if warmup_steps is None: # Constant learning rate as default 
+            if optimizer is None:
+                optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
+                                             weight_decay=0.0001)
+            lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, 
+                                                             lambda step: 1)
         else: # Initialize lr scheduler if warmup_steps is specified
+            if optimizer is None:
+                optimizer = torch.optim.Adam(model.parameters(), lr=1, 
+                                             weight_decay=0.0001)
+            # NOTE If you specify an optimizer here, the lr will be weighted
             schedule = train.LrSchedule(model.d_model, warmup_steps) 
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                                   optimizer, lambda step: schedule.get_lr(step))
+        if weight_schedule is None:
+            weight_schedule = ws.Constant([1]*len(model.target_levels))
 
         # Mixed precision
-        if utils.DEVICE.type == 'cuda' and utils.MIXED_PRECISION:
-            prec = torch.float16
+        prec = torch.float16 if utils.DEVICE.type == 'cuda' else torch.bfloat16
+        if utils.MIXED_PRECISION and utils.DEVICE.type == 'cuda':
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
         else:
-            prec = torch.bfloat16 # Not used since autocast is disabled
-            scaler = train.DummyScaler() # Does nothing
+            scaler = train.DummyScaler() # Does nothing 
 
         # Other configurations
         metrics = {'Loss': loss, **metrics}
@@ -136,16 +127,15 @@ class DeepITSTrainer:
                 scaler.unscale_(optimizer) # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 scaler.step(optimizer) # Apply optimizer 
-                optimizer.step()
-                lr_scheduler.step() # Update learning rate 
+                lr_scheduler.step() # Update learning rate
                 scaler.update()
                 
             # Validation results
-            scores = DeepITSTrainer.evaluate(model, train_data, metrics)
+            scores = DeepITSTrainer.validate(model, train_data, metrics)
             scores = np.concatenate([[epoch+1], scores])
             if valid_data is not None:
                 scores = np.concatenate([scores, 
-                       DeepITSTrainer.evaluate(model, valid_data, metrics)])
+                       DeepITSTrainer.validate(model, valid_data, metrics)])
             wandb_run.log({column: score 
                            for column, score in zip(log_columns, scores)})
 
@@ -155,7 +145,9 @@ class DeepITSTrainer:
         wandb_run.config.update({'num_params': params})
         wandb_run.finish(quiet=True)
         wandb_api = wandb.Api()
-        run = wandb_api.run(f'{wandb_run.project}/{wandb_run._run_id}')
+        wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
+        model.training = wandb_id
+        run = wandb_api.run(wandb_id)
         history = run.history(pandas=True)
         
         if utils.VERBOSE > 0:
@@ -169,43 +161,13 @@ class DeepITSTrainer:
         return model, history
     
     @staticmethod
-    def test(model, data, loss=None, metrics=EVAL_METRICS):
-        '''Produces results overview on test dataset (multiple test sets 
-        supported when provided as list in `data`)'''
-
-        # Initializing
-        print('Evaluating...') if utils.VERBOSE > 0 else None
-        data = [data] if type(data) != list else data
-        if loss is None:
-            loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
-                    for i in range(6)]
-        metrics = {'Loss': loss, **metrics}
-        results = DeepITSTrainer.results_init(model.target_levels, metrics)
-        coverage = {True: 'known', False: 'total'}
-        
-        for i in range(len(data)): # Looping over datasets and evaluating
-            for ignore_uknowns in [True, False]:
-                name = [f'Test set {i} ({coverage[ignore_uknowns]})']
-                result = list(DeepITSTrainer.evaluate(model, data[i], 
-                                                       metrics, ignore_uknowns))
-                result = pd.DataFrame([name + result], columns=results.columns)
-                results = pd.concat([results, result])
-
-        results = results.set_index([''])
-        if utils.VERBOSE > 0:
-            results.to_csv(utils.OUTPUT_DIR + '/test_results.csv', 
-                        float_format='{:.4}'.format)
-            print("Test results saved.")
-        return results
-
-    @staticmethod
-    def evaluate(model, data, metrics, ignore_unknowns=False):
+    def validate(model, data, metrics, ignore_unknowns=False):
         '''Evaluates performance of model for the specified `metrics`.
         
         Parameters
         ----------
         model: DeepITSClassifier
-            The to-be-evaluated neural network
+            The to-be-validated neural network
         data: UniteData
             Test data
         metrics: dict{str:function}
@@ -278,6 +240,7 @@ class DeepITSTrainer:
     def wandb_init(train_data, valid_data, model, optimizer, weight_schedule, 
                    sampler, loss, batch_size, epochs, warmup_steps, 
                    wandb_config, wandb_name):
+        '''Initializes wandb_run, writes config'''
         config = {
             'task': 'classification',
             **utils.get_config(train_data, prefix='trainset'),
@@ -293,7 +256,7 @@ class DeepITSTrainer:
             **wandb_config,
             **utils.get_config()
         }
-        return wandb.init(project='MycoAI DeepITSClassifier', config=config, 
+        return wandb.init(project=utils.WANDB_PROJECT, config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
 
     @staticmethod

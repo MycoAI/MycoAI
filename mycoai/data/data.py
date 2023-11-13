@@ -30,7 +30,7 @@ class Data:
         ----------
         filename: str
             Path of to-be-loaded file in FASTA format
-        tax_parser: function | 'unite' | 'mycoai'
+        tax_parser: function | 'unite'
             Function that parses the FASTA headers and extracts the taxonomic 
             labels on all six levels (from phylum to species). If None, no 
             labels will be extracted. If 'unite', will follow the UNITE format.
@@ -53,8 +53,7 @@ class Data:
                 data.drop_duplicates(subset=['sequence'], inplace=True)
 
         self.data = data
-        if name is None:
-            self.name = utils.filename_from_path(filename)
+        self.name = utils.filename_from_path(filename) if name is None else name
 
         if utils.VERBOSE > 0:
             print(len(self.data), "samples loaded into dataframe.")
@@ -178,10 +177,10 @@ class Data:
 
         return data
     
-    def export_fasta(self, filename):
+    def export_fasta(self, filepath):
         '''Exports this Data object to a FASTA file'''
 
-        file = open(utils.OUTPUT_DIR + filename, 'w')
+        file = open(filepath, 'w')
         for i, row in self.data.iterrows():
             header = '>|k__Fungi;p__' + row['phylum']
             header += ';c__' + row['class']
@@ -317,3 +316,40 @@ class Data:
             if lvl not in self.data.columns:
                 return False
         return True
+
+    def num_classes_per_level(self):
+        '''Number of classes per taxonomic level'''
+        output = []
+        for lvl in range(6):
+            known_data = self.data[
+                self.data[utils.LEVELS[lvl]] != utils.UNKNOWN_STR
+            ][utils.LEVELS[lvl]]
+            output.append(known_data.nunique(0))
+        return output
+
+    def get_class_size(self, mode):
+        '''Min/max/med number of examples per class per taxonomic level'''
+        output = []
+        for lvl in range(6):
+            known_data = self.data[
+                self.data[utils.LEVELS[lvl]] != utils.UNKNOWN_STR
+            ]
+            bins = known_data.groupby(utils.LEVELS[lvl]).size().values
+            if mode == 'min':
+                output.append(bins.min())
+            elif mode == 'max':
+                output.append(bins.max())
+            else: # mode == 'med'
+                output.append(np.median(bins))
+        return output
+
+    def get_config(self):
+        '''Returns configuration dictionary of this object instance.'''
+        return {
+            'name':             self.name,
+            'num_examples':     len(self.data),
+            'classes_per_lvl':  self.num_classes_per_level(),
+            'min_class_size':   self.get_class_size('min'),
+            'max_class_size':   self.get_class_size('max'),
+            'med_class_size':   self.get_class_size('med')
+        }

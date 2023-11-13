@@ -144,6 +144,10 @@ class TensorData(torch.utils.data.Dataset):
                 filtered = unknown[unknown != utils.UNKNOWN_INT]
                 add_random = torch.bincount(filtered, minlength=num_classes)
                 add_random = add_random/n_rows_unknown
+                # Check if we even have an unknown class at sampler level
+                if n_rows_unknown == 0:
+                    sampler.unknown_frac = 0
+                    add_random = torch.zeros(add_random.shape)
                 # Then combine the distribution + 'unknown' samples
                 sizes = (((1-sampler.unknown_frac)*dist) +
                          (sampler.unknown_frac*add_random))

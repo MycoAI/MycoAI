@@ -14,7 +14,9 @@ plotter.counts_sunburstplot(data, id='filtered')
 plotter.counts_boxplot(data, id='filtered')
 plotter.counts_barchart(data, id='filtered')
 
-dna_encoder = BytePairEncoder(data, length=512)
+data.export_fasta('/data/luuk/subset.fasta')
+
+dna_encoder = BytePairEncoder(data, length=256, vocab_size=512)
 data.encode_dataset(dna_encoder, valid_split=0.2, 
                     export_path=['/data/luuk/subset_bpe.pt', 
                                  '/data/luuk/subset_bpe_valid.pt'])

@@ -71,11 +71,10 @@ class MLMTrainer:
                                   optimizer, lambda step: schedule.get_lr(step))
             
         # Mixed precision
-        if utils.DEVICE.type == 'cuda' and utils.MIXED_PRECISION:
-            prec = torch.float16
+        prec = torch.float16 if utils.DEVICE.type == 'cuda' else torch.bfloat16
+        if utils.MIXED_PRECISION:
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
         else:
-            prec = torch.bfloat16 # Not used since autocast is disabled
             scaler = train.DummyScaler() # Does nothing 
 
         # Other configurations
@@ -164,6 +163,7 @@ class MLMTrainer:
     def wandb_init(data, model, optimizer, sampler, loss, batch_size, epochs, 
                    p_mlm, p_mask, p_random, warmup_steps, label_smoothing, 
                    wandb_config, wandb_name):
+        '''Initializes wandb_run, writes config'''
         config = {
             'task': 'mlm',
             **utils.get_config(data, prefix='trainset'),
@@ -181,5 +181,5 @@ class MLMTrainer:
             **wandb_config,
             **utils.get_config()
         }
-        return wandb.init(project='MycoAI DeepITSClassifier', config=config, 
+        return wandb.init(project=utils.WANDB_PROJECT, config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)

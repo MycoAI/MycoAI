@@ -140,9 +140,10 @@ class DeepITSClassifier(torch.nn.Module):
         '''Returns configuration dictionary of this instance.'''
         dna_encoder = utils.get_config(self.dna_encoder, 'dna_encoder')
         base_arch = utils.get_config(self.base_arch, 'base_arch')
+        train_ref = getattr(self, 'training', {})
         config = {
             'fcn': [self.fcn[i].out_features for i in range(0,len(self.fcn),2)],
             'output_type': utils.get_type(self.output),
             'target_levels': self.target_levels
         }
-        return {**dna_encoder, **base_arch, **config}
+        return {**dna_encoder, **base_arch, **config, **train_ref}
