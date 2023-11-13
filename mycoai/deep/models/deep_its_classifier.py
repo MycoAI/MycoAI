@@ -106,8 +106,8 @@ class DeepITSClassifier(torch.nn.Module):
             pred_argmax = torch.argmax(prediction, dim=1).cpu().numpy()
             classes.append(pred_argmax)
         classes = np.stack(classes, axis=1)
-        decoding = self.tax_encoder.decode(classes)
-        return pd.DataFrame(decoding, columns=[utils.LEVELS[i] + '_pred'
+        decoding = self.tax_encoder.decode(classes, self.target_levels)
+        return pd.DataFrame(decoding, columns=[utils.LEVELS[i]
                                                 for i in self.target_levels])
     
     def _predict(self, data, return_labels=False):
@@ -140,10 +140,10 @@ class DeepITSClassifier(torch.nn.Module):
         '''Returns configuration dictionary of this instance.'''
         dna_encoder = utils.get_config(self.dna_encoder, 'dna_encoder')
         base_arch = utils.get_config(self.base_arch, 'base_arch')
-        train_ref = getattr(self, 'training', {})
         config = {
             'fcn': [self.fcn[i].out_features for i in range(0,len(self.fcn),2)],
             'output_type': utils.get_type(self.output),
-            'target_levels': self.target_levels
+            'target_levels': self.target_levels,
+            'train_ref': getattr(self, 'train_ref', None)
         }
-        return {**dna_encoder, **base_arch, **config, **train_ref}
+        return {**dna_encoder, **base_arch, **config}

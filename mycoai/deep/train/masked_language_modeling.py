@@ -164,6 +164,7 @@ class MLMTrainer:
                    p_mlm, p_mask, p_random, warmup_steps, label_smoothing, 
                    wandb_config, wandb_name):
         '''Initializes wandb_run, writes config'''
+        utils.wandb_cleanup()
         config = {
             'task': 'mlm',
             **utils.get_config(data, prefix='trainset'),

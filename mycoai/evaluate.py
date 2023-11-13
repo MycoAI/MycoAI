@@ -76,6 +76,7 @@ class Evaluator:
 
     def wandb_init(self, data, classifier, wandb_config, wandb_name):
         '''Initializes wandb_run, writes config'''
+        utils.wandb_cleanup()
         model_config={} if classifier is None else utils.get_config(classifier)
         config = {
             'task': 'evaluation',
@@ -86,3 +87,6 @@ class Evaluator:
         }
         return wandb.init(project=utils.WANDB_PROJECT, config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
+    
+    def wandb_finish(self):
+        self.wandb_run.finish(quiet=True)

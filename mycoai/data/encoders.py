@@ -281,11 +281,11 @@ class TaxonEncoder:
         
         return torch.tensor(encoding, dtype=torch.int64)
     
-    def decode(self, labels: np.ndarray):
+    def decode(self, labels: np.ndarray, levels: list=utils.LEVELS):
         '''Decodes an array of index labels into their corresponding strings'''
         decoding = []
-        for i, encoder in enumerate(self.lvl_encoders):
-            decoding.append(encoder.inverse_transform(labels[:,i]))
+        for i, l in enumerate(levels):
+            decoding.append(self.lvl_encoders[l].inverse_transform(labels[:,i]))
         decoding = np.stack(decoding,axis=1)
         return decoding
     

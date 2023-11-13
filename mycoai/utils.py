@@ -3,6 +3,7 @@
 import git
 import torch
 import warnings
+import wandb
 import numpy as np
 import sklearn.metrics as skmetric
 from pathlib import Path
@@ -51,6 +52,13 @@ def set_device(name):
     if name == 'cpu':
         MIXED_PRECISION = False
     DEVICE = torch.device(name)
+
+def wandb_cleanup():
+    '''Finished any active WandB runs'''
+    if wandb.run is not None:
+        if VERBOSE > 0:
+            print("WARNING: wandb run still active. Finishing run...")
+        wandb.finish()
 
 def get_type(object):
     '''Get type of object as str without including parent modules'''

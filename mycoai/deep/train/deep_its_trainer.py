@@ -143,10 +143,11 @@ class DeepITSTrainer:
         model_parameters = filter(lambda p: p.requires_grad, model.parameters())
         params = sum([np.prod(p.size()) for p in model_parameters])
         wandb_run.config.update({'num_params': params})
+        wandb_run.unwatch(model)
         wandb_run.finish(quiet=True)
         wandb_api = wandb.Api()
         wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
-        model.training = wandb_id
+        model.train_ref = wandb_id
         run = wandb_api.run(wandb_id)
         history = run.history(pandas=True)
         
@@ -241,6 +242,7 @@ class DeepITSTrainer:
                    sampler, loss, batch_size, epochs, warmup_steps, 
                    wandb_config, wandb_name):
         '''Initializes wandb_run, writes config'''
+        utils.wandb_cleanup()
         config = {
             'task': 'classification',
             **utils.get_config(train_data, prefix='trainset'),
