@@ -54,9 +54,9 @@ class ChainedMultiHead(torch.nn.Module):
 
         return outputs
 
-class Inference(torch.nn.Module):
-    '''Uses inference matrices to predict multiple target taxon levels, 
-    while preserving their hierarchical structure.'''
+class SumInference(torch.nn.Module):
+    '''Sums softmax probabilities of child classes to infer the probability of 
+    a parent, using inference matrices.'''
 
     def __init__(self, classes, tax_encoder):
         super().__init__()
@@ -72,4 +72,28 @@ class Inference(torch.nn.Module):
             output.insert(0, 
                           output[0] @ self.tax_encoder.inference_matrices[i])
 
+        return output
+    
+class ParentInference(torch.nn.Module):
+    '''Infers parent classes by looking in the inference matrix and seeing what
+    parent a child class is most often part of.'''
+
+    def __init__(self, classes, tax_encoder):
+        super().__init__()
+        self.tax_encoder = tax_encoder
+        self.fc1 = torch.nn.LazyLinear(out_features=classes[-1])
+        self.softmax = torch.nn.Softmax(dim=1) 
+        self.classes = classes
+
+    def forward(self, x):
+        x = self.fc1(x) # Linear layer
+        output = [self.softmax(x)] # Softmax + initialize output list
+        _, pred = torch.max(output[0],1) # Get argmax
+        for i in range(len(self.classes)-2,-1,-1): # From low to high level
+            # Get parent indices by retrieving the argmax of inference matrix
+            _, pred = torch.max(self.tax_encoder.inference_matrices[i][pred], 1)
+            # Mimick probability tensor by one-hot encoding
+            probs = torch.zeros((pred.shape[0], self.classes[i]))
+            probs[torch.arange(pred.shape[0]), pred] = 1
+            output.insert(0, probs.to(x.device))
         return output

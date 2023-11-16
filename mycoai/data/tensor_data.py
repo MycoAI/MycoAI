@@ -56,6 +56,13 @@ class TensorData(torch.utils.data.Dataset):
         self.tax_encoder = content['tax_encoder']
         self.name = content['name']
 
+        # Make sure inference matrices are on a used device
+        inference_matrices = getattr(self.tax_encoder, 'inference_matrices', [])
+        for i in range(len(inference_matrices)):
+            inference_matrices[i] = inference_matrices[i].to(utils.DEVICE)
+        if len(inference_matrices) > 0:
+            self.tax_encoder.inference_matrices = inference_matrices
+
     def get_config(self):
         '''Returns configuration dictionary of this object instance.'''
         return {

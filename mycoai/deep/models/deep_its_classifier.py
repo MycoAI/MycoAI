@@ -4,8 +4,9 @@ import torch
 import numpy as np
 import pandas as pd
 from mycoai import utils, data
-from mycoai.deep.models.output_heads import SingleHead, MultiHead, Inference
-from mycoai.deep.models.output_heads import ChainedMultiHead
+from mycoai.deep.models.output_heads import SingleHead
+from mycoai.deep.models.output_heads import MultiHead, ChainedMultiHead
+from mycoai.deep.models.output_heads import SumInference, ParentInference 
 from mycoai.deep.models.transformers import BERT
 
 class DeepITSClassifier(torch.nn.Module): 
@@ -13,7 +14,7 @@ class DeepITSClassifier(torch.nn.Module):
     Supports several architecture variations.'''
 
     def __init__(self, base_arch, dna_encoder, tax_encoder, fcn_layers=[], 
-                 output='inference', target_levels=utils.LEVELS, dropout=0):
+                 output='infer_parent', target_levels=utils.LEVELS, dropout=0):
         '''Creates network based on specified archticture and encoders
 
         Parameters
@@ -26,7 +27,7 @@ class DeepITSClassifier(torch.nn.Module):
             The label encoder used for the (predicted) labels
         fcn_layers: list[int]
             List of node numbers for fully connected part before the output head
-        output: ['single'|'multi'|'chained'|'inference']
+        output: ['single'|'multi'|'chained'|'infer_parent'|'infer_sum']
             The type of output head(s) for the neural network
         target_levels: list[str]
             Names of the taxon levels for the prediction tasks
@@ -58,12 +59,14 @@ class DeepITSClassifier(torch.nn.Module):
         
         if output == 'single':
             self.output = SingleHead(self.classes)
-        elif 'multi':
+        elif output == 'multi':
             self.output = MultiHead(self.classes)
-        elif 'chained':
+        elif output == 'chained':
             self.output = ChainedMultiHead(self.classes)
-        elif 'inference':
-            self.output = Inference(self.classes, self.tax_encoder)
+        elif output == 'infer_sum':
+            self.output = SumInference(self.classes, self.tax_encoder)
+        elif output == 'infer_parent':
+            self.output = ParentInference(self.classes, self.tax_encoder)
 
         self.to(utils.DEVICE)
 
