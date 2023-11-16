@@ -12,14 +12,14 @@ utils.set_output_dir('results') # Create results directory, save output there
 # utils.VERBOSE = 1 # To turn on/off prints/plots
 
 # Data import & preprocessing
-train_data = data.DataPrep('/data/s2592800/test1.fasta')
+train_data = data.DataPrep('test1.fasta')
 train_data = train_data.class_filter('species', min_samples=5)
 train_data = train_data.sequence_length_filter()
 train_data = train_data.sequence_quality_filter()
 train_data, valid_data = train_data.encode_dataset('4d', valid_split=0.2)
 
 # Use encoding scheme from train_data on the test set
-test_data = data.DataPrep('/data/s2592800/test2.fasta')
+test_data = data.DataPrep('test2.fasta')
 test_data = test_data.encode_dataset(dna_encoder=train_data.dna_encoder,
                                      tax_encoder=train_data.tax_encoder)
 
