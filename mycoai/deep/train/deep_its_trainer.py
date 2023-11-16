@@ -1,6 +1,5 @@
 ''''For training and testing deep learning models on ITS classification task.'''
 
-import time
 import torch
 import wandb
 import numpy as np
@@ -8,6 +7,7 @@ import pandas as pd
 import torch.utils.data as tud
 from tqdm import tqdm
 from mycoai import utils
+from mycoai import plotter
 from mycoai.deep import train
 from mycoai.deep.train import weight_schedules as ws
 
@@ -144,12 +144,14 @@ class DeepITSTrainer:
         params = sum([np.prod(p.size()) for p in model_parameters])
         wandb_run.config.update({'num_params': params})
         wandb_run.unwatch(model)
-        wandb_run.finish(quiet=True)
         wandb_api = wandb.Api()
         wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
         model.train_ref = wandb_id
         run = wandb_api.run(wandb_id)
         history = run.history(pandas=True)
+        DeepITSTrainer.wandb_learning_curves(wandb_run, history, metrics, 
+                                    model.target_levels, valid_data is not None)
+        wandb_run.finish(quiet=True)
         
         if utils.VERBOSE > 0:
             print("Training finished, log saved to wandb (see above).")
@@ -226,13 +228,13 @@ class DeepITSTrainer:
         return pd.DataFrame(columns=columns)
 
     @staticmethod
-    def wandb_log_columns(target_levels, metrics, use_valid):
+    def wandb_log_columns(target_levels, metrics, use_valid, consistency=True):
         '''Returns a list of column names for the wandb log'''
         columns = ['Epoch']
         for dataset in ['train', 'valid'][:int(use_valid)+1]:
             columns +=  [f'{metric}|{dataset}|{utils.LEVELS[lvl]}' 
                            for metric in metrics for lvl in target_levels]
-            if len(target_levels) == 6:
+            if len(target_levels) == 6 and consistency:
                 columns += ([f'Consistency|{dataset}|{pair}' 
                                for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
         return columns
@@ -260,6 +262,23 @@ class DeepITSTrainer:
         }
         return wandb.init(project=utils.WANDB_PROJECT, config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
+    
+    @staticmethod
+    def wandb_learning_curves(wandb_run, history, metrics, target_levels, 
+                              use_valid):
+        '''Visualizes training history in custom charts on WandB'''
+        
+        history.replace('NaN', np.nan, inplace=True)
+        for metric in metrics:
+            columns = DeepITSTrainer.wandb_log_columns(target_levels, [metric], 
+                                                       use_valid, False)
+            wandb_run.log({f"{metric} learning curve": wandb.plot.line_series(
+              xs=history['Epoch'].values, 
+              ys=history[columns[1:]].values.T,
+              keys=[", ".join(column.split("|")[1:]) for column in columns[1:]],
+              title=metric,
+              xname='Epoch'
+            )})
 
     @staticmethod
     def final_report(history, target_levels, train_or_valid):

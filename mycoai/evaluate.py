@@ -53,6 +53,7 @@ class Evaluator:
                 results[name] = value
 
         self.wandb_run.log(results, step=0)
+        self.wandb_results_bars(results, metrics, target_levels)
         classifier = self.wandb_run.config.get('type', 0)
         info = {'Dataset': self.wandb_run.config['testset_name']}
         info = {'Classifier': classifier, **info} if classifier != 0 else info
@@ -89,4 +90,14 @@ class Evaluator:
                           name=wandb_name, dir=utils.OUTPUT_DIR)
     
     def wandb_finish(self):
+        '''Call this when including multiple wandb runs in one script'''
         self.wandb_run.finish(quiet=True)
+
+    def wandb_results_bars(self, results, metrics, target_levels):
+        '''Plots evaluation results in custom chart on WandB'''
+        for m in metrics:
+            data = [results[f'{m}|test|{lvl}'] for lvl in target_levels]
+            table = wandb.Table(
+                data=pd.DataFrame({'Level': target_levels, m: data}))
+            self.wandb_run.log({f'{m} table': 
+                wandb.plot.bar(table, 'Level', m, f'{m} per level')}, step=0)
