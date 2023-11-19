@@ -20,8 +20,9 @@ MAX_PER_EPOCH = 500000
 MIXED_PRECISION = True
 WANDB_PROJECT = 'ITS Classification'
 MAX_LEN = 5000 # Max length of positional encodings transformers
-# NOTE Be careful with changing this one: BPE assumes TOKENS['MASK'] == 0
-TOKENS = {'MASK':0, 'CLS':1, 'SEP':2, 'PAD':3, 'UNK':4}
+# NOTE Be careful with changing this one: BPE assumes TOKENS['MASK'] == 0 etc.
+TOKENS = {'MASK':0, 'SEP':1, 'PAD':2, 'UNK':3, 'CLS_P':4, 'CLS_C':5, 'CLS_O':6,
+          'CLS_F':7, 'CLS_G':8, 'CLS_S':9}
 EVAL_METRICS = {
     'Accuracy': skmetric.accuracy_score,
     'Accuracy (balanced)': skmetric.balanced_accuracy_score,

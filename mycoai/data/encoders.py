@@ -25,6 +25,7 @@ IUPAC_ENCODING = {'A':[1,    0,    0,    0   ],
                   'H':[0.33, 0.33, 0,    0.33],
                   'V':[0.33, 0.33, 0.33, 0   ],
                   'N':[0.25, 0.25, 0.25, 0.25]}
+CLS_PREFIX = [utils.TOKENS[f'CLS_{lvl}'] for lvl in ['P','C','O','F','G','S']]
 
 class DNAEncoder:
     '''Base class for nucleotide encoders'''
@@ -67,11 +68,12 @@ class BytePairEncoder(DNAEncoder):
                                        vocab_size=vocab_size,
                                        model_type='bpe',
                                        model_writer=mem_stream,
-                                       bos_id = utils.TOKENS['CLS'],
+                                       bos_id = utils.TOKENS['CLS_P'],
                                        eos_id = utils.TOKENS['SEP'],
                                        pad_id = utils.TOKENS['PAD'],
                                        unk_id = utils.TOKENS['UNK'],
-                                       control_symbols = ['MASK'],
+                                       control_symbols = ['MASK', 'CLS_C', 
+                                            'CLS_O', 'CLS_F', 'CLS_G', 'CLS_S'],
                                        add_dummy_prefix = False,
                                        character_coverage=1.0)
         
@@ -83,7 +85,7 @@ class BytePairEncoder(DNAEncoder):
         '''Encodes a single data row using the BPE encoder'''
         seq = re.sub('[^ACTG]', '?', sequence)
         encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
-        encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']] 
+        encoding = CLS_PREFIX + encoding + [utils.TOKENS['SEP']] 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.long)
 
@@ -117,13 +119,13 @@ class KmerTokenizer(KmerEncoder):
     def __init__(self, k=4, alphabet='ACGT', length=512, overlapping=False):
         super().__init__(k, alphabet, overlapping)
         self.length = length
-        min_token = len(utils.TOKENS)
+        min_token = max(utils.TOKENS.values) + 1
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
         self.vocab_size = len(self.map) + min_token
 
     def encode(self, sequence):
         '''Encodes data row, returns tensor of (kmer-based) token encodings'''
-        encoding = [utils.TOKENS['CLS']]
+        encoding = CLS_PREFIX
         seq = self._seq_preprocess(sequence)
         i = 0
         while i + self.k <= len(seq) and len(encoding) < self.length-1:
@@ -147,13 +149,13 @@ class KmerOneHot(KmerEncoder):
     def __init__(self, k=3, alphabet='ACGT', length=512, overlapping=False): 
         super().__init__(k, alphabet, overlapping)
         self.length = length
-        min_token = len(utils.TOKENS)
+        min_token = max(utils.TOKENS.values) + 1
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
         self.vocab_size = len(self.map) + min_token
 
     def encode(self, sequence):
         '''Encodes data row, returns tensor of (kmer-based) one-hot encodings'''
-        encoding = [self._get_onehot_vector(utils.TOKENS['CLS'])] 
+        encoding = [self._get_onehot_vector(token) for token in CLS_PREFIX] 
         seq = self._seq_preprocess(sequence)
         i = 0
         while i + self.k <= len(seq) and len(encoding) < self.length-1:

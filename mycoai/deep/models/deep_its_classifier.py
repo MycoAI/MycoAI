@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import pandas as pd
 from mycoai import utils, data
-from mycoai.deep.models.output_heads import SingleHead
+from mycoai.deep.models.output_heads import SingleHead, TokenizedLevels
 from mycoai.deep.models.output_heads import MultiHead, ChainedMultiHead
 from mycoai.deep.models.output_heads import SumInference, ParentInference 
 from mycoai.deep.models.transformers import BERT
@@ -14,7 +14,8 @@ class DeepITSClassifier(torch.nn.Module):
     Supports several architecture variations.'''
 
     def __init__(self, base_arch, dna_encoder, tax_encoder, fcn_layers=[], 
-                 output='infer_parent', target_levels=utils.LEVELS, dropout=0):
+                 output='infer_parent', target_levels=utils.LEVELS, dropout=0,
+                 chained_config=[False,True,True]):
         '''Creates network based on specified archticture and encoders
 
         Parameters
@@ -27,15 +28,18 @@ class DeepITSClassifier(torch.nn.Module):
             The label encoder used for the (predicted) labels
         fcn_layers: list[int]
             List of node numbers for fully connected part before the output head
-        output: ['single'|'multi'|'chained'|'infer_parent'|'infer_sum']
-            The type of output head(s) for the neural network
+        output:'single'|'multi'|'chained'|'infer_parent'|'infer_sum'|'tokenized'
+            The type of output head(s) for the neural network.
         target_levels: list[str]
             Names of the taxon levels for the prediction tasks
         dropout: float
             Dropout percentage for the dropout layer
-        '''
-        super().__init__()
+        chained_config: list[bool]
+            List of length 3 indicating the configuration for ChainedMultiHead.
+            Corresponding to arguments: ascending, use_probs, and all_access.
+            Default is [False, True, True].'''
         
+        super().__init__()
         self.target_levels = self._get_target_level_indices(target_levels)
         self.dna_encoder = dna_encoder
         self.tax_encoder = tax_encoder 
@@ -46,7 +50,10 @@ class DeepITSClassifier(torch.nn.Module):
         self.dropout = torch.nn.Dropout(dropout)
         
         if type(self.base_arch) == BERT:
-            self.base_arch.set_mode('classification')
+            if output == 'tokenized':
+                self.base_arch.set_mode('classification', self.target_levels)
+            else:
+                self.base_arch.set_mode('classification')
 
         # The fully connected part
         fcn = []
@@ -62,12 +69,14 @@ class DeepITSClassifier(torch.nn.Module):
         elif output == 'multi':
             self.output = MultiHead(self.classes)
         elif output == 'chained':
-            self.output = ChainedMultiHead(self.classes)
+            self.output = ChainedMultiHead(self.classes, *chained_config)
         elif output == 'infer_sum':
             self.output = SumInference(self.classes, self.tax_encoder)
         elif output == 'infer_parent':
             self.output = ParentInference(self.classes, self.tax_encoder)
-
+        elif output == 'tokenized':
+            self.output = TokenizedLevels(self.classes)
+            
         self.to(utils.DEVICE)
 
     def _get_target_level_indices(self, target_levels):
