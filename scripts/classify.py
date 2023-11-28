@@ -35,9 +35,9 @@ def add_blast_args(group):
                              help='the classification position to load the classification.')  # optional
 
 def add_its_args(group):
-    group.add_argument('-m', '--method', choices=['dbn', 'cnn', 'rdp', 'transformer'], required=True)
+    group.add_argument('-m', '--method', choices=['simpleCnn','dbn', 'cnn', 'rdp', 'transformer'], required=True)
     group.add_argument('--fasta_filepath',
-                            help='Path to the FASTA file containing ITS sequences.')
+                            help='Path to the FASTA file classify containing ITS sequences.')
 
     group.add_argument('--out',
                             default='prediction.csv',

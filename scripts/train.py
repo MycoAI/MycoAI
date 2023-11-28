@@ -34,6 +34,8 @@ class TrainConfig:
         self.weight_schedule = 'Constant([1,1,1,1,1,1])'
         self.warmup_steps = None
         self.dropout = 0.0
+        self.sequence_length_filter_tolerance = None
+        self.sequence_quality_filter_tolerance = None
 
 
         if file_path is not None:
@@ -86,7 +88,10 @@ class TrainConfig:
         self.dna_encoder = dna_encoder
     def set_tax_encoder(self, tax_encoder):
         self.tax_encoder = tax_encoder
-
+    def set_sequence_length_filter_tolerance(self, sequence_length_filter_tolerance):
+        self.sequence_length_filter_tolerance = sequence_length_filter_tolerance
+    def set_sequence_quality_filter_tolerance(self, sequence_quality_filter_tolerance):
+        self.sequence_quality_filter_tolerance = sequence_quality_filter_tolerance
 
 
 
@@ -147,8 +152,10 @@ class Train:
         # Data import & preprocessing
         train_data = data.DataPrep(args.train_data)
         #train_data = train_data.class_filter('species', min_samples=5)
-        train_data = train_data.sequence_length_filter()
-        train_data = train_data.sequence_quality_filter()
+        if hyperparameters.sequence_length_filter_tolerance is not None:
+            train_data = train_data.sequence_length_filter(tolerance=hyperparameters.sequence_length_filter_tolerance)
+        if hyperparameters.sequence_quality_filter_tolerance is not None:
+            train_data = train_data.sequence_quality_filter(tolerance=hyperparameters.sequence_quality_filter_tolerance)
         train_data, valid_data = train_data.encode_dataset(hyperparameters.dna_encoder, hyperparameters.tax_encoder, valid_split=args.valid_data_split)
 
 
