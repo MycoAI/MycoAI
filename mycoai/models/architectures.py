@@ -4,6 +4,31 @@ import torch
 from .. import utils
 from .transformers import BERT
 
+class CNN(torch.nn.Module):
+    def __init__(self, nb_classes, input_length=100):
+        super(CNN, self).__init__()
+
+        self.model = torch.nn.Sequential(
+            torch.nn.Conv1d(1, 5, kernel_size=5, padding=0),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool1d(kernel_size=2),
+
+            torch.nn.Conv1d(5, 10, kernel_size=5, padding=0),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool1d(kernel_size=2),
+
+            torch.nn.Flatten(),
+            torch.nn.Linear(10 * ((input_length - 4) // 2 - 4) // 2, 500),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(0.5),
+
+            torch.nn.Linear(500, nb_classes),
+            torch.nn.Softmax(dim=1)
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
 class SimpleCNN(torch.nn.Module):
     
     def __init__(self, kernel, conv_layers, in_channels=4, pool_size=3):

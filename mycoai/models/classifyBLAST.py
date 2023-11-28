@@ -15,22 +15,16 @@ import random
 from mycoai.loggingwrapper import LoggingWrapper
 
 class BLASTClassifier:
-    def __init__(self, prog_args, input_fasta, reportfilename):
-        self.parser = argparse.ArgumentParser()
-        self.parser.add_argument('-r', '--reference', required=True, help='the reference fasta file.')
-        self.parser.add_argument('-t', '--threshold', required=True, type=float, default=0.97, help='The threshold for the classification.')
-        self.parser.add_argument('-mc', '--mincoverage', type=int, default=300, help='Optinal. Minimum coverage required for the identitiy of the BLAST comparison.')
-        self.parser.add_argument('-c', '--classification', help='the classification file in tab. format.')#optinal
-        self.parser.add_argument('-p', '--classificationpos', type=int, default=0, help='the classification position to load the classification.')#optional
-        self.args = self.parser.parse_args(prog_args)
-        self.testdataset = input_fasta
+    def __init__(self, args):
+        self.args = args
+        self.testdataset = self.args.fasta_filepath
         self.traindataset = self.args.reference
         self.optthreshold = self.args.threshold
         self.mincoverage = self.args.mincoverage
         self.classificationfilename = self.args.classification
         self.classificationposition = self.args.classificationpos
         self.nproc=multiprocessing.cpu_count()
-        self.reportfilename=reportfilename
+        self.reportfilename=self.args.out
 
 
 
