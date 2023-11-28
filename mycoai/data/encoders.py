@@ -8,7 +8,7 @@ import sklearn
 import itertools
 import numpy as np
 import sentencepiece as spm
-from . import utils
+from mycoai import utils
 
 IUPAC_ENCODING = {'A':[1,    0,    0,    0   ],
                   'C':[0,    1,    0,    0   ],
@@ -25,6 +25,7 @@ IUPAC_ENCODING = {'A':[1,    0,    0,    0   ],
                   'H':[0.33, 0.33, 0,    0.33],
                   'V':[0.33, 0.33, 0.33, 0   ],
                   'N':[0.25, 0.25, 0.25, 0.25]}
+CLS_PREFIX = [utils.TOKENS[f'CLS_{lvl}'] for lvl in ['P','C','O','F','G','S']]
 
 class DNAEncoder:
     '''Base class for nucleotide encoders'''
@@ -32,7 +33,7 @@ class DNAEncoder:
     def __init__(self):
         pass
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         raise RuntimeError('encode method not implemented for base class.')
 
 
@@ -42,11 +43,11 @@ class FourDimDNA(DNAEncoder):
     def __init__(self, length=1000):
         self.length = length
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes a single data row, returns list of four-channel encodings'''
 
-        encoding = ([IUPAC_ENCODING[data_row['sequence'][i]]
-               for i in range(min(len(data_row['sequence']), self.length))])
+        encoding = ([IUPAC_ENCODING[sequence[i]]
+               for i in range(min(len(sequence), self.length))])
         encoding = encoding + [[0,0,0,0]]*(self.length-len(encoding)) # Padding
         return torch.tensor(encoding, dtype=torch.float32).transpose(1,0)
 
@@ -62,16 +63,17 @@ class BytePairEncoder(DNAEncoder):
         if utils.VERBOSE > 0:
             print('Initializing Byte Pair Encoder...')
         mem_stream = io.BytesIO() # In-memory byte stream to save model to
-        sequences = iter(data.data['sequence'].tolist()) # Sentence iterator object
+        sequences = iter(data.data['sequence'].tolist()) # Sentence iterator
         spm.SentencePieceTrainer.train(sentence_iterator=sequences, 
                                        vocab_size=vocab_size,
                                        model_type='bpe',
                                        model_writer=mem_stream,
-                                       bos_id = utils.TOKENS['CLS'],
+                                       bos_id = utils.TOKENS['CLS_P'],
                                        eos_id = utils.TOKENS['SEP'],
                                        pad_id = utils.TOKENS['PAD'],
                                        unk_id = utils.TOKENS['UNK'],
-                                       control_symbols = ['MASK'],
+                                       control_symbols = ['MASK', 'CLS_C', 
+                                            'CLS_O', 'CLS_F', 'CLS_G', 'CLS_S'],
                                        add_dummy_prefix = False,
                                        character_coverage=1.0)
         
@@ -79,11 +81,11 @@ class BytePairEncoder(DNAEncoder):
         self.sp = spm.SentencePieceProcessor(model_proto=mem_stream.getvalue())
         self.length = length
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes a single data row using the BPE encoder'''
-        seq = re.sub('[^ACTG]', '?', data_row['sequence'])
+        seq = re.sub('[^ACTG]', '?', sequence)
         encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
-        encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']] 
+        encoding = CLS_PREFIX + encoding + [utils.TOKENS['SEP']] 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.long)
 
@@ -117,14 +119,14 @@ class KmerTokenizer(KmerEncoder):
     def __init__(self, k=4, alphabet='ACGT', length=512, overlapping=False):
         super().__init__(k, alphabet, overlapping)
         self.length = length
-        min_token = len(utils.TOKENS)
+        min_token = max(utils.TOKENS.values) + 1
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
         self.vocab_size = len(self.map) + min_token
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes data row, returns tensor of (kmer-based) token encodings'''
-        encoding = [utils.TOKENS['CLS']]
-        seq = self._seq_preprocess(data_row['sequence'])
+        encoding = CLS_PREFIX
+        seq = self._seq_preprocess(sequence)
         i = 0
         while i + self.k <= len(seq) and len(encoding) < self.length-1:
             encoding.append(self.map[seq[i:i+self.k]]) # Add encoding
@@ -147,14 +149,14 @@ class KmerOneHot(KmerEncoder):
     def __init__(self, k=3, alphabet='ACGT', length=512, overlapping=False): 
         super().__init__(k, alphabet, overlapping)
         self.length = length
-        min_token = len(utils.TOKENS)
+        min_token = max(utils.TOKENS.values) + 1
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
         self.vocab_size = len(self.map) + min_token
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes data row, returns tensor of (kmer-based) one-hot encodings'''
-        encoding = [self._get_onehot_vector(utils.TOKENS['CLS'])] 
-        seq = self._seq_preprocess(data_row['sequence'])
+        encoding = [self._get_onehot_vector(token) for token in CLS_PREFIX] 
+        seq = self._seq_preprocess(sequence)
         i = 0
         while i + self.k <= len(seq) and len(encoding) < self.length-1:
             encoding.append(self._get_onehot_vector(self.map[seq[i:i+self.k]]))
@@ -184,9 +186,9 @@ class KmerSpectrum(KmerEncoder):
         self.map = {word:i for i, word in enumerate(self.words)}
         self.normalize = normalize
 
-    def encode(self, data_row):
+    def encode(self, sequence):
         '''Encodes a single data row, returns k-mer frequences'''
-        seq = self._seq_preprocess(data_row['sequence'])
+        seq = self._seq_preprocess(sequence)
         freqs = np.zeros(len(self.map)) # Initialize frequency vector
         for i in range(0, len(seq)-self.k+1, self.stride): # Count
             freqs[self.map[seq[i:i+self.k]]] += 1
@@ -281,11 +283,11 @@ class TaxonEncoder:
         
         return torch.tensor(encoding, dtype=torch.int64)
     
-    def decode(self, labels: np.ndarray):
+    def decode(self, labels: np.ndarray, levels: list=utils.LEVELS):
         '''Decodes an array of index labels into their corresponding strings'''
         decoding = []
-        for i, encoder in enumerate(self.lvl_encoders):
-            decoding.append(encoder.inverse_transform(labels[:,i]))
+        for i, l in enumerate(levels):
+            decoding.append(self.lvl_encoders[l].inverse_transform(labels[:,i]))
         decoding = np.stack(decoding,axis=1)
         return decoding
     

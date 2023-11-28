@@ -1,49 +1,37 @@
 ''''For training and testing deep learning models on ITS classification task.'''
 
-import time
 import torch
 import wandb
 import numpy as np
 import pandas as pd
 import torch.utils.data as tud
-import sklearn.metrics as skmetric
-from functools import partial
 from tqdm import tqdm
-from mycoai import utils, plotter
-from mycoai import training
-from mycoai.training import weight_schedules as ws
+from mycoai import utils
+from mycoai import plotter
+from mycoai.deep import train
+from mycoai.deep.train import weight_schedules as ws
 
-
-EVAL_METRICS = {'Accuracy': skmetric.accuracy_score,
-                'Accuracy (balanced)': skmetric.balanced_accuracy_score,
-                'Precision': partial(skmetric.precision_score, 
-                                     average='macro', zero_division=np.nan),
-                'Recall': partial(skmetric.recall_score, 
-                                  average='macro', zero_division=np.nan),
-                'F1': partial(skmetric.f1_score, 
-                              average='macro', zero_division=np.nan),
-                'MCC': skmetric.matthews_corrcoef}
 
 mean = lambda tensor, weights: (tensor @ weights) / weights.sum()
 
 
-class ClassificationTask:
-    '''Multi-task classification (for multiple taxonomic levels)'''
+class DeepITSTrainer:
+    '''Multi-class classification (for multiple taxonomic levels)'''
 
     @staticmethod
     def train(model, train_data, valid_data=None, epochs=100, loss=None,
-              batch_size=64, sampler=None, optimizer=None, metrics=EVAL_METRICS, 
-              weight_schedule=None, warmup_steps=None, wandb_config={}, 
-              wandb_name=None):
+              batch_size=64, sampler=None, optimizer=None, 
+              metrics=utils.EVAL_METRICS, weight_schedule=None, 
+              warmup_steps=None, wandb_config={}, wandb_name=None):
         '''Trains a neural network to classify ITS sequences
   
         Parameters
         ----------
         model: torch.nn.Module
             Neural network architecture
-        train_data: mycoai.data.Dataset
+        train_data: mycoai.data.TensorData
             Preprocessed dataset containing ITS sequences for training
-        valid_data: mycoai.data.Dataset
+        valid_data: mycoai.data.TensorData
             Preprocessed dataset containing ITS sequences for validation   
         epochs: int
             Number of training iterations
@@ -83,32 +71,35 @@ class ClassificationTask:
         if loss is None:
             loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
                     for i in range(6)]
-        if optimizer is None:
-            optimizer = torch.optim.Adam(model.parameters(), lr=1, 
-                                        weight_decay=0.0001)
-        if weight_schedule is None:
-            weight_schedule = ws.Constant([1]*len(model.target_levels))
-        if warmup_steps is None: # Constant learning rate as default
-            lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                        optimizer, lambda step: 0.0001) 
+        if warmup_steps is None: # Constant learning rate as default 
+            if optimizer is None:
+                optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
+                                             weight_decay=0.0001)
+            lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, 
+                                                             lambda step: 1)
         else: # Initialize lr scheduler if warmup_steps is specified
-            schedule = training.LrSchedule(model.d_model, warmup_steps) 
+            if optimizer is None:
+                optimizer = torch.optim.Adam(model.parameters(), lr=1, 
+                                             weight_decay=0.0001)
+            # NOTE If you specify an optimizer here, the lr will be weighted
+            schedule = train.LrSchedule(model.d_model, warmup_steps) 
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                                   optimizer, lambda step: schedule.get_lr(step))
+        if weight_schedule is None:
+            weight_schedule = ws.Constant([1]*len(model.target_levels))
 
         # Mixed precision
-        if utils.DEVICE.type == 'cuda' and utils.MIXED_PRECISION:
-            prec = torch.float16
+        prec = torch.float16 if utils.DEVICE.type == 'cuda' else torch.bfloat16
+        if utils.MIXED_PRECISION and utils.DEVICE.type == 'cuda':
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
         else:
-            prec = torch.bfloat16 # Not used since autocast is disabled
-            scaler = training.DummyScaler() # Does nothing
+            scaler = train.DummyScaler() # Does nothing 
 
         # Other configurations
         metrics = {'Loss': loss, **metrics}
-        log_columns = ClassificationTask.wandb_log_columns(model.target_levels, 
+        log_columns = DeepITSTrainer.wandb_log_columns(model.target_levels, 
                                               metrics, (valid_data is not None))
-        wandb_run = ClassificationTask.wandb_init(train_data, valid_data, model, 
+        wandb_run = DeepITSTrainer.wandb_init(train_data, valid_data, model, 
             optimizer, weight_schedule, sampler, loss, batch_size, epochs, 
             warmup_steps, wandb_config, wandb_name)
         
@@ -130,22 +121,21 @@ class ClassificationTask:
                     y_pred = model(x)
                     # Learning step
                     losses = torch.cat([loss[lvl](y_pred[i],y[:,lvl]).reshape(1)
-                                    for i, lvl in enumerate(model.target_levels)])
+                                  for i, lvl in enumerate(model.target_levels)])
                     mean_loss = mean(losses, w)
                 scaler.scale(mean_loss).backward() # Calculate gradients
                 scaler.unscale_(optimizer) # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 scaler.step(optimizer) # Apply optimizer 
-                optimizer.step()
-                lr_scheduler.step() # Update learning rate 
+                lr_scheduler.step() # Update learning rate
                 scaler.update()
                 
             # Validation results
-            scores = ClassificationTask.evaluate(model, train_data, metrics)
+            scores = DeepITSTrainer.validate(model, train_data, metrics)
             scores = np.concatenate([[epoch+1], scores])
             if valid_data is not None:
                 scores = np.concatenate([scores, 
-                       ClassificationTask.evaluate(model, valid_data, metrics)])
+                       DeepITSTrainer.validate(model, valid_data, metrics)])
             wandb_run.log({column: score 
                            for column, score in zip(log_columns, scores)})
 
@@ -153,59 +143,34 @@ class ClassificationTask:
         model_parameters = filter(lambda p: p.requires_grad, model.parameters())
         params = sum([np.prod(p.size()) for p in model_parameters])
         wandb_run.config.update({'num_params': params})
-        wandb_run.finish(quiet=True)
+        wandb_run.unwatch(model)
         wandb_api = wandb.Api()
-        run = wandb_api.run(f'{wandb_run.project}/{wandb_run._run_id}')
+        wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
+        model.train_ref = wandb_id
+        run = wandb_api.run(wandb_id)
         history = run.history(pandas=True)
+        DeepITSTrainer.wandb_learning_curves(wandb_run, history, metrics, 
+                                    model.target_levels, valid_data is not None)
+        wandb_run.finish(quiet=True)
         
         if utils.VERBOSE > 0:
             print("Training finished, log saved to wandb (see above).")
             print("Final accuracy scores:\n---------------------")
-            ClassificationTask.final_report(history,model.target_levels,'train')
+            DeepITSTrainer.final_report(history,model.target_levels,'train')
             if valid_data is not None:
-                ClassificationTask.final_report(history,model.target_levels,
+                DeepITSTrainer.final_report(history,model.target_levels,
                                                 'valid')
         
         return model, history
     
     @staticmethod
-    def test(model, data, loss=None, metrics=EVAL_METRICS):
-        '''Produces results overview on test dataset (multiple test sets 
-        supported when provided as list in `data`)'''
-
-        # Initializing
-        print('Evaluating...') if utils.VERBOSE > 0 else None
-        data = [data] if type(data) != list else data
-        if loss is None:
-            loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT) 
-                    for i in range(6)]
-        metrics = {'Loss': loss, **metrics}
-        results = ClassificationTask.results_init(model.target_levels, metrics)
-        coverage = {True: 'known', False: 'total'}
-        
-        for i in range(len(data)): # Looping over datasets and evaluating
-            for ignore_uknowns in [True, False]:
-                name = [f'Test set {i} ({coverage[ignore_uknowns]})']
-                result = list(ClassificationTask.evaluate(model, data[i], 
-                                                       metrics, ignore_uknowns))
-                result = pd.DataFrame([name + result], columns=results.columns)
-                results = pd.concat([results, result])
-
-        results = results.set_index([''])
-        if utils.VERBOSE > 0:
-            results.to_csv(utils.OUTPUT_DIR + '/test_results.csv', 
-                        float_format='{:.4}'.format)
-            print("Test results saved.")
-        return results
-
-    @staticmethod
-    def evaluate(model, data, metrics, ignore_unknowns=False):
+    def validate(model, data, metrics, ignore_unknowns=False):
         '''Evaluates performance of model for the specified `metrics`.
         
         Parameters
         ----------
-        model: ITSClassifier
-            The to-be-evaluated neural network
+        model: DeepITSClassifier
+            The to-be-validated neural network
         data: UniteData
             Test data
         metrics: dict{str:function}
@@ -231,7 +196,7 @@ class ClassificationTask:
                                                   argmax_y_pred.cpu().numpy()))
         
         if len(model.target_levels) == 6:
-            cons = ClassificationTask.consistency(y_pred, model.tax_encoder)
+            cons = DeepITSTrainer.consistency(y_pred, model.tax_encoder)
             return np.array(results + cons)
         else:
             return np.array(results)
@@ -263,13 +228,13 @@ class ClassificationTask:
         return pd.DataFrame(columns=columns)
 
     @staticmethod
-    def wandb_log_columns(target_levels, metrics, use_valid):
+    def wandb_log_columns(target_levels, metrics, use_valid, consistency=True):
         '''Returns a list of column names for the wandb log'''
         columns = ['Epoch']
         for dataset in ['train', 'valid'][:int(use_valid)+1]:
             columns +=  [f'{metric}|{dataset}|{utils.LEVELS[lvl]}' 
                            for metric in metrics for lvl in target_levels]
-            if len(target_levels) == 6:
+            if len(target_levels) == 6 and consistency:
                 columns += ([f'Consistency|{dataset}|{pair}' 
                                for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
         return columns
@@ -278,6 +243,8 @@ class ClassificationTask:
     def wandb_init(train_data, valid_data, model, optimizer, weight_schedule, 
                    sampler, loss, batch_size, epochs, warmup_steps, 
                    wandb_config, wandb_name):
+        '''Initializes wandb_run, writes config'''
+        utils.wandb_cleanup()
         config = {
             'task': 'classification',
             **utils.get_config(train_data, prefix='trainset'),
@@ -293,8 +260,25 @@ class ClassificationTask:
             **wandb_config,
             **utils.get_config()
         }
-        return wandb.init(project='MycoAI ITSClassifier', config=config, 
+        return wandb.init(project=utils.WANDB_PROJECT, config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
+    
+    @staticmethod
+    def wandb_learning_curves(wandb_run, history, metrics, target_levels, 
+                              use_valid):
+        '''Visualizes training history in custom charts on WandB'''
+        
+        history.replace('NaN', np.nan, inplace=True)
+        for metric in metrics:
+            columns = DeepITSTrainer.wandb_log_columns(target_levels, [metric], 
+                                                       use_valid, False)
+            wandb_run.log({f"{metric} learning curve": wandb.plot.line_series(
+              xs=history['Epoch'].values, 
+              ys=history[columns[1:]].values.T,
+              keys=[", ".join(column.split("|")[1:]) for column in columns[1:]],
+              title=metric,
+              xname='Epoch'
+            )})
 
     @staticmethod
     def final_report(history, target_levels, train_or_valid):

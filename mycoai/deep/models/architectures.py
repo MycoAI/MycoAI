@@ -1,8 +1,7 @@
 '''Several architectures that handle ITS data. Must output a flat tensor.'''
 
 import torch
-from .. import utils
-from .transformers import BERT
+from mycoai import utils
 
 class SimpleCNN(torch.nn.Module):
     
