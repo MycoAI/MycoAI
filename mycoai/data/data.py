@@ -22,7 +22,7 @@ class Data:
         'phylum', 'class', 'order', 'genus', 'family', 'species', and 'sequence'
     '''
 
-    def __init__(self, filename, tax_parser='unite', allow_duplicates=False,
+    def __init__(self, filepath, tax_parser='unite', allow_duplicates=False,
                  name=None):
         '''Loads data into Data object, using parser adjusted to data format
         
@@ -44,7 +44,7 @@ class Data:
         tax_parsers = {'unite':  self.unite_parser}
         if type(tax_parser) == str:
             tax_parser = tax_parsers[tax_parser]
-        data = self.read_fasta(filename, tax_parser=tax_parser)
+        data = self.read_fasta(filepath, tax_parser=tax_parser)
 
         if not allow_duplicates:
             if tax_parser is not None:
@@ -53,7 +53,7 @@ class Data:
                 data.drop_duplicates(subset=['sequence'], inplace=True)
 
         self.data = data
-        self.name = utils.filename_from_path(filename) if name is None else name
+        self.name = utils.filename_from_path(filepath) if name is None else name
 
         if utils.VERBOSE > 0:
             print(len(self.data), "samples loaded into dataframe.")
@@ -193,10 +193,6 @@ class Data:
             file.write(row['sequence'] + '\n')
 
         file.close()
-    
-    def mycoai_parser(self, fasta_header):
-        '''Parses FASTA headers using the MycoAI format to extract taxonomies'''
-        return fasta_header[1:-1].split(";")
 
     def unite_parser(self, fasta_header):
         '''Parses FASTA headers using the UNITE format to extract taxonomies'''
@@ -244,11 +240,14 @@ class Data:
         '''Reports class imbalance per taxon level by calculating the kullback-
         leibler divergence from a perfectly balanced distribution'''
 
+        if not self.labelled():
+            raise AttributeError('No data labels have been imported.')
+
         print("Kullback-leibler divergence from ideal distribution:")
         klds = []
         for lvl in utils.LEVELS:
             data = self.data[(self.data[lvl] != utils.UNKNOWN_STR)]
-            actual = data.groupby([lvl])['sequence'].count().values
+            actual = data.groupby([lvl])['id'].count().values
             ideal = [1/data[lvl].nunique()]*data[lvl].nunique()
             kld = scipy.stats.entropy(actual, ideal)
             klds.append(kld)
@@ -262,6 +261,9 @@ class Data:
         for which at least min_samples are available in that class.
         Ensures perfect class balance when min_samples == max_samples.
         Randomly selects a max_classes number of classes.'''
+
+        if not self.labelled():
+            raise AttributeError('No data labels have been imported.')
 
         data = self.data.groupby(level).filter(lambda x: len(x) > min_samples)
         groups = [group for _, group in data.groupby(level)]
@@ -319,6 +321,10 @@ class Data:
 
     def num_classes_per_level(self):
         '''Number of classes per taxonomic level'''
+
+        if not self.labelled():
+            raise AttributeError('No data labels have been imported.')
+
         output = []
         for lvl in range(6):
             known_data = self.data[
@@ -329,6 +335,10 @@ class Data:
 
     def get_class_size(self, mode):
         '''Min/max/med number of examples per class per taxonomic level'''
+
+        if not self.labelled():
+            raise AttributeError('No data labels have been imported.')
+        
         output = []
         for lvl in range(6):
             known_data = self.data[
@@ -345,11 +355,19 @@ class Data:
 
     def get_config(self):
         '''Returns configuration dictionary of this object instance.'''
+
+        if self.labelled():
+            labels_config = {
+                'classes_per_lvl':  self.num_classes_per_level(),
+                'min_class_size':   self.get_class_size('min'),
+                'max_class_size':   self.get_class_size('max'),
+                'med_class_size':   self.get_class_size('med')
+            }
+        else:
+            labels_config = {}
+
         return {
             'name':             self.name,
             'num_examples':     len(self.data),
-            'classes_per_lvl':  self.num_classes_per_level(),
-            'min_class_size':   self.get_class_size('min'),
-            'max_class_size':   self.get_class_size('max'),
-            'med_class_size':   self.get_class_size('med')
+            **labels_config
         }

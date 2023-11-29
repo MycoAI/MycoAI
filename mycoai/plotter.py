@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.io as pio
 import sklearn.metrics as skmetric
-from mycoai import utils, data
+from mycoai import utils
 
 def counts_barchart(dataprep, level='phylum', id=''):
     '''Plots the number of sequences per class'''

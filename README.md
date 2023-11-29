@@ -3,7 +3,7 @@ may not be up-to-date with the latest changes in the code. [Last update:
 8-11-2023]*
 
 # About MycoAI
-Python package for classification of fungal metabarcoding sequences. MycoAI 
+Python package for classification of fungal ITS metabarcoding sequences. MycoAI 
 introduces a collection of deep neural classifiers and allows users to train
 their own. 
 <!-- FUTURE Traditional methods, such as BLAST (+ DNABarcoder) and RDPClassifier
@@ -54,19 +54,68 @@ through the following prompt:
 
     python -m scripts.<script_name>
 
-The main script, [`classify.py`](/scripts/classify.py) can be used for the
-assignment of taxonomic labels to ITS sequences within a FASTA file. The output
-will be saved in a 'prediction.csv' file. 
+To get more information about (optional) arguments, run the command above
+followed by an `-h` flag. The available scripts are listed below:
+* [`deep_its.classify`](#deepits-classification-script): Taxonomic 
+classification of fungal ITS sequences using a deep neural network.
+* [`deep_its.train`](#deepits-traininig-script): Trains a deep neural network 
+for taxonomic classification of fungal ITS sequences.
+* [`evaluate`](#evaluation-script): Evaluates predicted classification of fungal
+ITS sequences.
+
+On top of the scripts listed above, there are also scripts within the 
+[paper](/scripts/paper/) folder. They follow the exact experimental setup as 
+used in the report, and allow to reproduce the results.
+
+### DeepITS classification script
+To classify a dataset of fungal ITS sequences (provided in a FASTA file) using
+our (or your own) DeepITS classification model, run:
+
+    python -m scripts.deep_its.classify <fasta_filepath>
+
 The script takes the following arguments:
 
 | Argument | Required | Description | Values | 
 | ---  | --- | --- | --- |
 | `fasta_filepath` | Yes | Path to the FASTA file containing ITS sequences. | path 
-| `--out`   | No | Where to save the output to.| path
+| `--out`   | No | Where to save the output to (default is 'prediction.csv') | path
+| `--load_model` | No |  Path to saved DeepITSClassifier Pytorch model (default is 'models/november.pt'). | path
 | `--method` | No | Which classification method to use (default is 'deep_its'). | ['deep_its']
 
-Running the scripts within the [paper](/scripts/paper/) folder follow the exact
-experimental setup as used in the report, and allow to reproduce the results.
+### DeepITS traininig script
+To train a DeepITS classifier model on your own dataset of fungal ITS sequences
+(provided in a FASTA file), run:
+
+    python -m scripts.deep_its.train <fasta_filepath>
+
+The script takes the following arguments:
+
+| Argument | Required | Description | Values | 
+| ---  | --- | --- | --- |
+| `fasta_filepath` | Yes | Path to the FASTA file containing ITS sequences for training. | path |
+| `--save_model` | No | Path to where the trained model should be saved to. | path | 
+| `--base_arch_type` | No |  Type of the to-be-trained base architecture (default is BERT). | ['ResNet', 'BERT'] | 
+| `--epochs` | No | Number of epochs to train for (default is 100). | `int` | 
+| `--batch_size` | No | Number of samples per batch (default is 64). | `int` | 
+| `--valid_split` | No | Fraction of data to be used for validation (default is 0.2). | `float` | 
+| `--learning_rate` | No | Learning rate in Adam optimizer (default is 0.0001). | `float` | 
+| `--weight_decay` | No | Weight decay in Adam optimizer (regularization) (default is 0). | `float` | 
+| `--weighted_loss` | No | Whether to weigh the loss by the reciprocal class size (default is 1). | [0,1]
+| `--weighted_sampling` | No | Whether to sample data with a probability that is based on the reciprocal of their class size (default is 0). | [0,1]
+| `--device` | No | Forces use of specific device (GPU/CPU). By default, MycoAI will look for and use GPUs whenever available. | `str` | 
+
+### Evaluation script
+To evaluate the quality of a classification (provided as .csv file) predicted by
+a (deep/non-deep) ITS classifier, run:
+
+    python -m scripts.evaluate <classification> <reference>
+
+The script takes the following arguments:
+
+| Argument | Required | Description | Values | 
+| ---  | --- | --- | --- |
+| `classification` | Yes | Path to .csv file containing predicted labels. | path 
+| `reference` | Yes | Path to .csv or FASTA file containing ground truth labels. | path
 
 ## Overview
 To train/evaluate a model on a dataset, these are the steps that you can follow
@@ -230,7 +279,7 @@ methods, and its base architecture.
 | `dna_encoder` | The applied DNA encoding method | One of ['4d', 'bpe', 'kmer-tokens', 'kmer-onehot', 'kmer-spectral'] or a `DNAEncoder` instance |
 | `tax_encoder` | The label encoder used for the (predicted) labels | 'categorical' or a `TaxonEncoder` instance |
 | `fcn_layers` | List of node numbers for fully connected neural network before the output head | `list[int]` of any length | 
-| `output` | The type of output head(s) for the neural network | One of ['single', 'multi', 'chained', 'inference']
+| `output` | The type of output head(s) for the neural network | One of ['single', 'multi', 'chained', 'infer_sum', 'infer_parent']
 | `target_levels` | Names of the taxon levels for the prediction tasks | `list[str]` with one or more of ['phylum', 'class', 'order', 'family', 'genus', 'species']
 | `dropout` | Dropout percentage for the dropout layer | `float` in [0,1]
 
@@ -260,12 +309,14 @@ corresponding to a taxonomic level is not only inputted with the output from the
 base architecture, but *also* with the output from the head corresponding to its 
 parent taxon level. For example, the class-level output head gets phylum-level 
 predictions as extra input, i.e. they are chained. 
-* `ClassInference` 'inference': A single standard classification output head, 
+* `SumInference` 'infer_sum': A single standard classification output head, 
 but the higher taxon levels are inferred from the data. The inference is done
 by multiplying the output with inference matrices that describe how often in the 
 training data a certain lower-level taxon belonged to a certain higher-level 
 taxon. These inference matrices are part of the `TaxonEncoder` class and 
 calculated during data encoding. 
+* `ParentInference` 'infer_parent': Infers parent classes by looking in the 
+inference matrix and seeing what parent a child class is most often part of.
 
 #### Example
 ```python

@@ -17,7 +17,7 @@ class Evaluator:
         ----------
         classification: pd.DataFrame
             The to-be-evaluated classification (prediction)
-        reference: mycoai.Data
+        reference: pd.DataFrame | mycoai.Data
             Reference dataset with true labels.
         classifier: 
             If provided and equipped with a .get_config method, will add its 
@@ -28,7 +28,10 @@ class Evaluator:
             Name of the run to be displayed on weights and biases.'''
         
         self.pred = classification
-        self.true = reference
+        if type(reference) == pd.DataFrame:
+            self.true = reference
+        else: # mycoai.Data
+            self.true = reference.data
         self.wandb_run = self.wandb_init(reference, classifier, wandb_config, 
                                          wandb_name)
 
@@ -49,7 +52,7 @@ class Evaluator:
         for m in metrics:
             for lvl in target_levels:
                 name = f'{m}|test|{lvl}'
-                value = metrics[m](self.true.data[lvl], self.pred[lvl])
+                value = metrics[m](self.true[lvl], self.pred[lvl])
                 results[name] = value
 
         self.wandb_run.log(results, step=0)
@@ -67,9 +70,9 @@ class Evaluator:
     def confusion_matrix(self, level):
         '''Creates confusion matrix at specified level'''
         encoder = sklearn.preprocessing.LabelEncoder()
-        encoder.fit(pd.concat([self.pred[level], self.true.data[level]]))
+        encoder.fit(pd.concat([self.pred[level], self.true[level]]))
         pred = encoder.transform(self.pred[level])
-        true = encoder.transform(self.true.data[level])
+        true = encoder.transform(self.true[level])
         conf_mat = wandb.plot.confusion_matrix(preds=pred, y_true=true, 
                                        probs=None, class_names=encoder.classes_)
         wandb.log({f"Confusion|test|{level}" : conf_mat}, step=0)
