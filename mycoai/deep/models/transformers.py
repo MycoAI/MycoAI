@@ -18,7 +18,7 @@ from mycoai import utils
 class BERT(torch.nn.Module):
     '''BERT base model, transformer encoder to be used for various tasks'''
 
-    def __init__(self, len_input, vocab_size, d_model=512, d_ff=2048, h=8, N=6, 
+    def __init__(self, len_input, vocab_size, d_model=256, d_ff=512, h=8, N=6, 
                  dropout=0.1, mode='default'):
         '''Initializes the transformer given the source/target vocabulary.
         
@@ -29,9 +29,9 @@ class BERT(torch.nn.Module):
         vocab_size: int
             Number of unique tokens in vocabulary
         d_model: int
-            Dimension of sequence repr. (embedding) in model (default is 512)
+            Dimension of sequence repr. (embedding) in model (default is 256)
         d_ff: int
-            Dimension of hidden layer FFN sublayers (default is 2048)
+            Dimension of hidden layer FFN sublayers (default is 512)
         h: int
             Number of heads used for multi-head self-attention (default is 8)
         N: int
@@ -52,7 +52,7 @@ class BERT(torch.nn.Module):
         self.d_ff = d_ff
         self.h = h
         self.N = N
-        self.set_mode('default')
+        self.set_mode(mode)
         self.to(utils.DEVICE)
 
         # Initialize parameters with Glorot / fan_avg.
@@ -60,7 +60,7 @@ class BERT(torch.nn.Module):
             if p.dim() > 1:
                 torch.nn.init.xavier_uniform_(p)
 
-    def set_mode(self, mode, target_levels=[5]):
+    def set_mode(self, mode, target_levels=5):
         '''Uses alternative forward method when mode == 'classificiation'.'''
         if mode == 'classification':
             self.target_levels = target_levels

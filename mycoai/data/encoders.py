@@ -59,7 +59,7 @@ class FourDimDNA(DNAEncoder):
 class BytePairEncoder(DNAEncoder):
     '''Tokenizer based on appearance frequency of base combinations'''
 
-    def __init__(self, data, length=512, vocab_size=256):
+    def __init__(self, data, length=256, vocab_size=768):
         if utils.VERBOSE > 0:
             print('Initializing Byte Pair Encoder...')
         mem_stream = io.BytesIO() # In-memory byte stream to save model to
@@ -84,7 +84,7 @@ class BytePairEncoder(DNAEncoder):
     def encode(self, sequence):
         '''Encodes a single data row using the BPE encoder'''
         seq = re.sub('[^ACTG]', '?', sequence)
-        encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
+        encoding = self.sp.encode(seq)[:self.length-7] # Leave room for CLS/PAD
         encoding = CLS_PREFIX + encoding + [utils.TOKENS['SEP']] 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.long)
