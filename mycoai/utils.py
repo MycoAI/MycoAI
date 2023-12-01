@@ -5,7 +5,9 @@ import torch
 import warnings
 import wandb
 import numpy as np
+import sklearn.metrics as skmetric
 from pathlib import Path
+from functools import partial
 
 # Constants
 OUTPUT_DIR = ''
@@ -13,12 +15,24 @@ VERBOSE = 1
 LEVELS = ['phylum', 'class', 'order', 'family', 'genus', 'species']
 UNKNOWN_STR = '?'
 UNKNOWN_INT = 9999999
-PRED_BATCH_SIZE = 1000
+PRED_BATCH_SIZE = 64
 MAX_PER_EPOCH = 500000
 MIXED_PRECISION = True
+WANDB_PROJECT = 'ITS Classification'
 MAX_LEN = 5000 # Max length of positional encodings transformers
-# NOTE Be careful with changing this one: BPE assumes TOKENS['MASK'] == 0
-TOKENS = {'MASK':0, 'CLS':1, 'SEP':2, 'PAD':3, 'UNK':4}
+# NOTE Be careful with changing this one: BPE assumes TOKENS['MASK'] == 0 etc.
+TOKENS = {'MASK':0, 'SEP':1, 'PAD':2, 'UNK':3, 'CLS_P':4, 'CLS_C':5, 'CLS_O':6,
+          'CLS_F':7, 'CLS_G':8, 'CLS_S':9}
+EVAL_METRICS = {
+    'Accuracy': skmetric.accuracy_score,
+    'Accuracy (balanced)': skmetric.balanced_accuracy_score,
+    'Precision': partial(
+        skmetric.precision_score, average='macro', zero_division=np.nan),
+    'Recall': partial(
+        skmetric.recall_score, average='macro', zero_division=np.nan),
+    'F1': partial(skmetric.f1_score, average='macro', zero_division=np.nan),
+    'MCC': skmetric.matthews_corrcoef
+}
 
 filename_from_path = lambda path: path.split('/')[-1].split('\\')[-1]
 
@@ -39,6 +53,13 @@ def set_device(name):
     if name == 'cpu':
         MIXED_PRECISION = False
     DEVICE = torch.device(name)
+
+def wandb_cleanup():
+    '''Finished any active WandB runs'''
+    if wandb.run is not None:
+        if VERBOSE > 0:
+            print("WARNING: wandb run still active. Finishing run...")
+        wandb.finish()
 
 def get_type(object):
     '''Get type of object as str without including parent modules'''

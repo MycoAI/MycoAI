@@ -19,7 +19,7 @@ Currently, the only way of using MycoAI is from source:
 You can install the specified requirements manually, or create a conda 
 environment with all the necessary dependencies using the command below. 
 
-    conda create env -f environment.yml
+    conda env create -f environment.yml
 
 ## Requirements
 * Python version 3.8 or higher [[link](https://www.python.org/)]
@@ -85,13 +85,18 @@ when writing your own scripts.
 5. [Performance evaluation](#performance-evaluation)
 
 ## Importing the data
-Users can load a FASTA file into a `mycoai.data.DataPrep` object, which 
+Users can load a FASTA file into a `mycoai.data.Data` object, which 
 comes with several data filtering methods and can encode the data into a format 
 that is suitable for the desired classifier. By default, it is assumed that the 
 FASTA headers contain labels following the [UNITE](https://unite.ut.ee/) format,
+<<<<<<< HEAD
 but the `DataPrep` object also allows for: 
 1) unlabelled FASTA sequence files or 
 2) custom header parsers functions written by the user. 
+=======
+but the `Data` object also allows for custom header parsers functions written by
+the user. 
+>>>>>>> master
 
 #### Example
 Assume we have two files: 
@@ -108,21 +113,21 @@ to define a custom parsing function:
 import mycoai
 
 # For data with labels following the UNITE format
-unite_data = mycoai.data.DataPrep('dataset1.fasta')
+unite_data = mycoai.data.Data('dataset1.fasta')
 
 # For data with labels following a different format
 def custom_parser(fasta_header):
     '''Example parsing function for header with comma-separated labels'''
     return fasta_header[1:].split(",")
 
-own_data = mycoai.data.DataPrep('dataset2.fasta', tax_parser=custom_parser)
+own_data = mycoai.data.Data('dataset2.fasta', tax_parser=custom_parser)
 ```
 
-Note that the `DataPrep` object assumes that `tax_parser` returns a list of the 
+Note that the `Data` object assumes that `tax_parser` returns a list of the 
 following format: [id, phylum, class, order, family, genus, species].
 
 ## Applying data filters
-The `DataPrep` class contains the following filter methods:
+The `Data` class contains the following filter methods:
 1. `class_filter`: Used to manipulate the size of taxonomic classes, designed
 for creating a smaller-sized data subset. It will retains at most `max_samples`
 sequences at the specified taxon level, from classes with at least `min_samples` 
@@ -130,16 +135,18 @@ available. It can also randomly select a `max_classes` number of classes.
 2. `sequence_quality_filter`: Removes sequences with more than a tolerated ratio
 (`tolerance`) of uncertain bases (bases that are not in [A,C,G,T]).
 3. `sequence_length_filter`: Removes sequences with more than the tolerated 
-standard deviation (`tolerance`) from the mean length.
+standard deviation (`tolerance`) from the mean length *or* outside of the 
+specified range (in this case `tolerance` must be of type `list` or `RangeType`)
 
-Note for users that wish to implement their own filtering methods: a `DataPrep`
-object has a `data` attribute which is a pandas Dataframe.
+Note for users that wish to implement their own filtering methods: a `Data`
+object has a `data` attribute which is a pandas Dataframe. Filtered datasets can
+be saved as fasta files in UNITE format using the `.export_fasta` method.
 
 #### Example
 ```python
 import mycoai
 
-data = mycoai.DataPrep('dataset1.fasta') # Load data
+data = mycoai.Data('dataset1.fasta') # Load data
 
 # Select a subset of 1000 species from those that have at least 5 samples
 data = data.class_filter('species', min_samples=5, max_classes=1000)
@@ -150,7 +157,7 @@ data = data.sequence_length_filter(tolerance=4)
 ```
 
 ## Data encoding
-Each classifier requires its own input format. A `mycoai.DataPrep` object has
+Each classifier requires its own input format. A `mycoai.Data` object has
 the following methods for converting its data into the right encoding:
 * `encode_dataset`: for deep-learning-based classifiers.
 * More will be added soon.
@@ -163,15 +170,16 @@ network refers to them as numbers. The model must contain the applied encoding
 method, such that it can encode new DNA input and decode its predictions into a 
 human-interpretable format whenever new data comes in. 
 
-The `encode_dataset` method from `mycoai.DataPrep` returns a `mycoai.Dataset` 
-object which can be inputted to the neural network (as it inherits from 
-`torch.utils.data.Dataset`). The most important argument of the `encode_dataset` 
-method is `dna_encoder`. The DNA encoding methods implemented within MycoAI are 
-listed [below](#dna-encoding-methods). `encode_dataset` also has a `valid_split`
-argument that allows users to define assign a random fraction of the data for 
-validation. Furthermore, it has an `export_path` argument which can be used to 
-save encoded datasets. These datasets can then later be loaded using the 
-`filepath` argument of the `mycoai.Dataset` constructor. 
+The `encode_dataset` method from `mycoai.data.Data` returns a 
+`mycoai.data.TensorData` object which can be inputted to the neural network (as 
+it inherits from `torch.utils.data.Dataset`). The most important argument of the 
+`encode_dataset` method is `dna_encoder`. The DNA encoding methods implemented 
+within `mycoai.data.encoders` are listed [below](#dna-encoding-methods). 
+`encode_dataset` also has a `valid_split` argument that allows users to define 
+assign a random fraction of the data for validation. Furthermore, it has an 
+`export_path` argument which can be used to save encoded datasets. These 
+datasets can then later be loaded using the `filepath` argument of the 
+`mycoai.data.TensorData` constructor. 
 
 ### DNA encoding methods
 | Name              | Description                                                                                                                                                                                              | Tensor shape* | Example encoding: ACGACGT                                                   |
@@ -193,36 +201,36 @@ for padding, unknown values, and masking.
 ```python
 import mycoai
 
-dataprep = mycoai.data.DataPrep('dataset1.fasta') # Load data
+dataprep = mycoai.data.Data('dataset1.fasta') # Load data
 
 # Using BytePair encoding with default settings
 dataset = dataprep.encode_dataset('bpe')
 
 # Modifying the parameters of BytePair encoding
 dna_encoder = mycoai.encoders.BytePairEncoder(dataprep, vocab_size=1000)
-example = dna_encoder.encode({'sequence':'ACGACGT'})
+example = dna_encoder.encode('ACGACGT')
 dataset = dataprep.encode_dataset(dna_encoder)
 
 # Exporting/loading train/validation data
 train_data, val_data = dataprep.encode_dataset('bpe', valid_split=0.1, 
                                                export_path=['tr.pt', 'val.pt'])
-train_data = mycoai.data.Dataset('tr.pt')
-val_data = mycoai.data.Dataset('val.pt')
+train_data = mycoai.data.TensorData('tr.pt')
+val_data = mycoai.data.TensorData('val.pt')
 ```
 
 ## Deep-learning-based ITS classifiers
-The `mycoai.models.ITSClassifier` class uses deep neural networks for its 
-predictions. MycoAI offers various options for the user to 
+The `mycoai.deep.models.DeepITSClassifier` class uses deep neural networks for 
+its predictions. MycoAI offers various options for the user to 
 [configure](#model-configuration) and [train](#training) his/her own neural ITS 
 classifier. Any `torch.nn.Module` object can be used as a basis for such a 
 classifier. The package also includes [pre-training](#pre-training) options for 
 BERT-like architectures.  
 
 ### Model configuration
-The `mycoai.models.ITSClassifier` class can be configured in multiple ways, its 
-arguments are listed below. The most important elements of a Deep ITS classifier
-are its data [encoding](#data-encoding-for-deep-neural-classifiers) methods, 
-and its base architecture.  
+The `mycoai.deep.models.DeepITSClassifier` class can be configured in multiple 
+ways, its arguments are listed below. The most important elements of a Deep ITS 
+classifier are its data [encoding](#data-encoding-for-deep-neural-classifiers) 
+methods, and its base architecture.  
 
 | Argument        | Description                                                                    | Values                                                                                         | 
 |-----------------|--------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
@@ -247,8 +255,9 @@ below. Their hyperparameters (e.g. kernel sizes) can be configured individually.
 
 Depending on the nature of the task, users might want to predict multiple
 taxonomic levels using the same neural network. To this end, we implemented
-several types of output heads in `mycoai.models.output_heads`. The output head,
-or a string indicating the type, is inputted to `ITSClassifier`'s constructor.
+several types of output heads in `mycoai.deep.models.output_heads`. The output 
+head, or a string indicating the type, is inputted to `DeepITSClassifier`'s 
+constructor.
 * `SingleHead` / 'single': Standard classification output head: a 
 softmax-activated layer in which the number of nodes equals the number of 
 classes to predict.
@@ -281,20 +290,20 @@ TODO
 
 ### Training
 A deep ITS classifier can be trained on labelled data by using the 
-`ClassificationTask.train` method. Please find its input arguments below.
+`DeepITSTrainer.train` method. Please find its input arguments below.
 
 | Argument | Description | Values | 
 | --- | --- | --- |
-| `model` | Neural network | `mycoai.models.ITSClassifier` | 
-| `train_data` | Dataset containing encoded ITS sequences for training | `mycoai.data.Dataset` | 
-| `valid_data` | If provided, uses this dataset containing encoded ITS sequences for validation | `mycoai.data.Dataset`, default is `None` | 
+| `model` | Neural network | `mycoai.deep.models.DeepITSClassifier` | 
+| `train_data` | Dataset containing encoded ITS sequences for training | `mycoai.data.TensorData` | 
+| `valid_data` | If provided, uses this dataset containing encoded ITS sequences for validation | `mycoai.data.TensorData`, default is `None` | 
 | `epochs` | Number of training iterations | `int`, default is 100 | 
 | `loss` | To-be-optimized loss function (or list of functions per level) | Callable or list of callables per level, default is `CrossEntropyLoss` | 
 | `batch_size` | Number of training examples per optimization step | `int`, default is 64 |
 | `sampler` | Strategy to use for drawing data samples | `torch.utils.data.Sampler`, default is random | 
 | `optimizer` | Optimization strategy | `torch.optim`, default is Adam | 
 | `metrics ` | Evaluation metrics to report during training, provided as dictionary with metric name as key and function as value | `dict{str:callable}`, default is accuracy, balanced acuracy, precision, recall, f1, and mcc. | 
-| `weight_schedule` | Factors by which each level should be weighted in loss per epoch | `mycoai.training.weight_schedules`, default is `Constant([1,1,1,1,1,1])` |  
+| `weight_schedule` | Factors by which each level should be weighted in loss per epoch | `mycoai.deep.train.weight_schedules`, default is `Constant([1,1,1,1,1,1])` |  
 | `warmup_steps` | When specified, the lr increases linearly for the first `warmup_steps` then decreases proportionally to $1/\sqrt{step}$. Works only for models with `d_model` attribute (e.g. BERT) | `int`, default is `None` |  
 | `wandb_config` | Allows the user to add extra information to the weights and biases config data. | `dict{str:str}`, default is `{}` | 
 | `wandb_name` | Name of the run to be displayed on weights and biases. Will choose a random name if unspecified. | `str`, default is `None` |
@@ -309,12 +318,12 @@ SAMPLER
 WEIGHTED LOSS
 
 A deep ITS classifier can be trained on labelled data by using the 
-`ClassificationTask.train` method. Custom/weighted data sampler or loss
-functions can be specified. For example, by using `Dataset.weighted_loss`, the 
+`DeepITSTrainer.train` method. Custom/weighted data sampler or loss
+functions can be specified. For example, by using `TensorData.weighted_loss`, the 
 loss for each taxonomic class is weighted by the reciprocal class size 
 (accounting for class imbalance).  -->
 
-The `ClassificationTask.train` method will return both the trained model and a 
+The `DeepITSTrainer.train` method will return both the trained model and a 
 history dataframe, containing values for several metrics collected during the 
 training epochs. These can be plotted using the functions available in 
 `plotter`. For an example, see below. 
@@ -326,29 +335,29 @@ For a more extensive example, covering more options, we refer to
 ```python
 import torch
 from mycoai import data, plotter
-from mycoai.models import ITSClassifier
-from mycoai.models.architectures import ResNet
-from mycoai.training import ClassificationTask
+from mycoai.deep.models import DeepITSClassifier
+from mycoai.deep.models import ResNet
+from mycoai.deep.train import DeepITSTrainer
 
 # Data import & preprocessing
-train_data = data.DataPrep('/data/s2592800/test1.fasta')
+train_data = data.Data('/data/s2592800/test1.fasta')
 train_data, valid_data = train_data.encode_dataset('4d', valid_split=0.2)
 
 # Use encoding scheme from train_data on the test set
-test_data = data.DataPrep('/data/s2592800/test2.fasta')
+test_data = data.Data('/data/s2592800/test2.fasta')
 test_data = test_data.encode_dataset(dna_encoder=train_data.dna_encoder,
                                      tax_encoder=train_data.tax_encoder)
 
 # Model definition
 arch = ResNet([2,2,2,2]) # = ResNet18
 # This model will have a single output head and make genus-level predictions
-model = ITSClassifier(arch, train_data.dna_encoder, train_data.tax_encoder,  
+model = DeepITSClassifier(arch, train_data.dna_encoder, train_data.tax_encoder,  
                target_levels=['genus'], fcn_layers=[128,20,64], output='single')
 
 # Train/test (optionally with weighted loss/sampling) 
-model, history = ClassificationTask.train(model, train_data, valid_data, 100)
+model, history = DeepITSTrainer.train(model, train_data, valid_data, 100)
 plotter.classification_loss(history, model.target_levels)
-result = ClassificationTask.test(model, test_data)
+result = DeepITSTrainer.test(model, test_data)
 ```
 
 ## Traditional ITS classifiers

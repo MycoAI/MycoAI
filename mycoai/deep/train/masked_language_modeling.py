@@ -5,9 +5,9 @@ import torch.utils.data as tud
 from tqdm import tqdm
 import wandb
 from mycoai import utils
-from mycoai import training
+from mycoai.deep import train
 
-class MLMTask:
+class MLMTrainer:
     '''Masked Language Modelling: training a network to predict the value of
     randomly selected masked out input tokens.'''
 
@@ -21,8 +21,8 @@ class MLMTask:
         ----------
         model: torch.nn.Module
             The to-be-trained model. Must be part of type BERT. 
-        data: mycoai.Dataset
-            Dataset object containing sequences to be used for training.
+        data: mycoai.TensorData
+            TensorData object containing sequences to be used for training.
         epochs: int
             Number of training epochs (default is 100).
         batch_size: int
@@ -66,21 +66,20 @@ class MLMTask:
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                         optimizer, lambda step: 0.0001) 
         else: # Initialize lr scheduler if warmup_steps is specified
-            schedule = training.LrSchedule(model.d_model, warmup_steps)
+            schedule = train.LrSchedule(model.d_model, warmup_steps)
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                                   optimizer, lambda step: schedule.get_lr(step))
             
         # Mixed precision
-        if utils.DEVICE.type == 'cuda' and utils.MIXED_PRECISION:
-            prec = torch.float16
+        prec = torch.float16 if utils.DEVICE.type == 'cuda' else torch.bfloat16
+        if utils.MIXED_PRECISION:
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
         else:
-            prec = torch.bfloat16 # Not used since autocast is disabled
-            scaler = training.DummyScaler() # Does nothing 
+            scaler = train.DummyScaler() # Does nothing 
 
         # Other configurations
         model.set_mode('mlm') # Turns on MLM layer of BERT model
-        wandb_run = MLMTask.wandb_init(data, model, optimizer, sampler, # wandb
+        wandb_run = MLMTrainer.wandb_init(data, model, optimizer, sampler,
             loss_function, batch_size, epochs, p_mlm, p_mask, p_random, 
             warmup_steps, label_smoothing, wandb_config, wandb_name)
         wandb_run.watch(model, log='all')
@@ -94,8 +93,8 @@ class MLMTask:
 
                 # Learning:
                 # Apply mask to batch using the probability arguments
-                x, y = MLMTask.mask_batch(x, model.vocab_size, 
-                                          p_mlm, p_mask, p_random)
+                x, y = MLMTrainer.mask_batch(x, model.vocab_size, 
+                                             p_mlm, p_mask, p_random)
                 x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
                 optimizer.zero_grad()
                 with torch.autocast(device_type=utils.DEVICE.type, dtype=prec,
@@ -142,7 +141,12 @@ class MLMTask:
         select = ((torch.rand(x.shape) < p_mlm) & # Select for MLM
                     (x != utils.TOKENS['PAD']) & # Can't select...
                     (x != utils.TOKENS['SEP']) & # ... special tokens
-                    (x != utils.TOKENS['CLS'])) 
+                    (x != utils.TOKENS['CLS_P']) &
+                    (x != utils.TOKENS['CLS_C']) &
+                    (x != utils.TOKENS['CLS_O']) &
+                    (x != utils.TOKENS['CLS_F']) &
+                    (x != utils.TOKENS['CLS_G']) &
+                    (x != utils.TOKENS['CLS_S'])) 
         probs = torch.rand(x.shape)
         masked = select & (probs < p_mask)
         random = select & (probs >= p_mask) & (probs < p_mask + p_random)
@@ -164,6 +168,8 @@ class MLMTask:
     def wandb_init(data, model, optimizer, sampler, loss, batch_size, epochs, 
                    p_mlm, p_mask, p_random, warmup_steps, label_smoothing, 
                    wandb_config, wandb_name):
+        '''Initializes wandb_run, writes config'''
+        utils.wandb_cleanup()
         config = {
             'task': 'mlm',
             **utils.get_config(data, prefix='trainset'),
@@ -181,15 +187,5 @@ class MLMTask:
             **wandb_config,
             **utils.get_config()
         }
-        return wandb.init(project='MycoAI ITSClassifier', config=config, 
+        return wandb.init(project=utils.WANDB_PROJECT, config=config, 
                           name=wandb_name, dir=utils.OUTPUT_DIR)
-
-
-class NSPTask:
-    '''Next Sentence Prediction''' #TODO
-
-    def __init__(self):
-        pass
-
-    def train(self, data):
-        pass

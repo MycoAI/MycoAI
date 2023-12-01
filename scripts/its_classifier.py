@@ -1,8 +1,15 @@
-import train
-import classify
+from train import Train
+from classify import Classify
 import argparse
+import sys
+from pathlib import Path
 
+from  mycoai.loggingwrapper import LoggingWrapper
 
+script_directory = Path(__file__).parent.absolute()
+parent_directory = script_directory.parent.absolute()
+
+sys.path.append(str(parent_directory))
 
 
 if __name__ == '__main__':
@@ -18,24 +25,28 @@ if __name__ == '__main__':
     train_blast_parser = subparsers.add_parser('train_blast')
 
     # Subparser for the "deep_its" command
-    train_deep_its_parser = subparsers.add_parser('train_deep')
+    train_deep_parser = subparsers.add_parser('train_deep')
 
     # Subparser for the "its" command
     classify_blast_parser = subparsers.add_parser('classify_blast')
 
 
     # Subparser for the "its" command
-    classify_deep_its_parser = subparsers.add_parser('classify_deep')
+    classify_deep_parser = subparsers.add_parser('classify_deep')
 
 
-    trainer = train.Train(train_blast_parser, train_deep_its_parser)
-    trainer.add_train_blast_args()
-    trainer.add_train_deep_args()
-    #classify.add_classify_args(classify_parser)
+    trainer = Train(train_blast_parser, train_deep_parser)
+    trainer.add_blast_args()
+    trainer.add_deep_args()
+    classifier = Classify(classify_blast_parser, classify_deep_parser)
+    classifier.add_blast_args()
+    classifier.add_deep_args()
 
     args = parser.parse_args()
 
     if args.command == 'train_deep':
-        trainer.train_deep(args)
-    #elif args.command == 'classify':
-     #   classify.classify(args)
+        trainer.deep(args)
+    elif args.command == 'classify_deep':
+        classifier.deep(args)
+    else:
+        print('Invalid command. Please try again.')

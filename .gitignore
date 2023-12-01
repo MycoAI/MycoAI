@@ -6,3 +6,5 @@ deathcap*
 TODO
 wandb*
 .idea
+saved_models
+*.png

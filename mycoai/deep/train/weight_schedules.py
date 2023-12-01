@@ -2,7 +2,7 @@
 the taxon levels, depending on the current training epoch.'''
 
 import torch
-from .. import utils
+from mycoai import utils
 
 class Constant:
     '''Constant taxon level weights throughout all training epochs.'''

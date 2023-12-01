@@ -13,7 +13,7 @@ BERT:
 
 import math
 import torch
-from .. import utils
+from mycoai import utils
 
 class BERT(torch.nn.Module):
     '''BERT base model, transformer encoder to be used for various tasks'''
@@ -60,9 +60,10 @@ class BERT(torch.nn.Module):
             if p.dim() > 1:
                 torch.nn.init.xavier_uniform_(p)
 
-    def set_mode(self, mode):
+    def set_mode(self, mode, target_levels=[5]):
         '''Uses alternative forward method when mode == 'classificiation'.'''
         if mode == 'classification':
+            self.target_levels = target_levels
             self.forward = self._forward_classification
         elif mode == 'mlm':
             self.forward = self._forward_mlm
@@ -78,7 +79,8 @@ class BERT(torch.nn.Module):
         '''Given input sequence, retrieve embedding aggregated in CLS token'''
         src_mask = (src != utils.TOKENS['PAD']).unsqueeze(-2) # Mask padding
         src_embedding = self.src_pos_embed(src) 
-        return self.encoder(src_embedding, src_mask)[:,0,:] # Only CLS token
+        # Return only the part of the tensor that corresponds to CLS tokens
+        return self.encoder(src_embedding, src_mask)[:,self.target_levels,:]
 
     def _forward_mlm(self, src):
         '''Given input sequence, predict masked tokens'''
