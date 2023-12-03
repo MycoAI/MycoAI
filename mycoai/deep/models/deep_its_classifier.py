@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from mycoai import utils, data
 import mycoai.deep.models.output_heads as mmo
-from mycoai.deep.models.transformers import BERT
+from mycoai.deep.models.transformers import BERT, EncoderDecoder
 
 class DeepITSClassifier(torch.nn.Module): 
     '''Fungal taxonomic classification model based on ITS sequences. 
@@ -42,8 +42,7 @@ class DeepITSClassifier(torch.nn.Module):
         self.dna_encoder = dna_encoder
         self.tax_encoder = tax_encoder 
         self.classes = torch.tensor(
-            [len(self.tax_encoder.lvl_encoders[i].classes_) 
-             for i in self.target_levels])
+            [self.tax_encoder.classes[i] for i in self.target_levels])
         self.base_arch = base_arch
         self.dropout = torch.nn.Dropout(dropout)
         
@@ -52,6 +51,11 @@ class DeepITSClassifier(torch.nn.Module):
                 self.base_arch.set_mode('classification', self.target_levels)
             else:
                 self.base_arch.set_mode('classification')
+        if type(self.base_arch) == EncoderDecoder:
+            self.forward = self._forward_encoder_decoder
+            output = 'autoreg'
+        else:
+            self.forward = self._forward
         d_hidden = getattr(self.base_arch, 'd_model', None)
 
         # The fully connected part
@@ -78,6 +82,8 @@ class DeepITSClassifier(torch.nn.Module):
             self.output = mmo.TokenizedLevels(self.classes)
         elif output == 'tree':
             self.output = mmo.SoftmaxTree(self.classes, tax_encoder, d_hidden)
+        elif output == 'autoreg':
+            self.output = mmo.AutoRegressive(self.classes)
             
         self.to(utils.DEVICE)
 
@@ -88,15 +94,47 @@ class DeepITSClassifier(torch.nn.Module):
         levels_indices.sort()
         return levels_indices
 
-    def forward(self, x):
+    def _forward(self, x):
         x = self.base_arch(x) 
         for fcn_layer in self.fcn:
             x = fcn_layer(x)
         x = self.output(x)
         return x
+    
+    def _forward_encoder_decoder(self, x, y=None):
+        if y is None:
+            return self._forward_autoregressive(x)
+        else:
+            return self._forward_teacher_forcing(x, y)
+    
+    def _forward_autoregressive(self, x):
+        '''Input decoder with prediction at previous token'''
+        # Initialize target with CLS token (=0 for decoder)
+        tgt = torch.zeros((x.shape[0],1), dtype=int, device=utils.DEVICE) 
+        output = []
+        for lvl in range(6): #NOTE Only target_levels==ALL supported right now..
+            x_ = self.base_arch(x, tgt)[:,lvl]
+            x_ = self.output(x_, lvl)
+            output.append(x_)
+            pred = 1 + self.tax_encoder.flat_label(torch.argmax(x_,dim=-1), lvl)
+            tgt = torch.cat((tgt, pred.unsqueeze(1)), dim=1)
+        return output
+
+    def _forward_teacher_forcing(self, x, y):
+        '''Input decoder with true target label'''
+        # Initialize target with CLS token (=0 for decoder)
+        tgt = torch.zeros((x.shape[0],1), dtype=int, device=utils.DEVICE) 
+        output = []
+        for lvl in range(6): #NOTE Only target_levels==ALL supported right now..
+            x_ = self.base_arch(x, tgt)[:,lvl]
+            x_ = self.output(x_, lvl)
+            output.append(x_)
+            next = 1 + self.tax_encoder.flat_label(y[:,lvl], lvl)
+            tgt = torch.cat((tgt, next.unsqueeze(1)), dim=1)
+        return output       
 
     # TODO reimplement dimensionality reduction (use old mycoai version)
-    def forward_until_bottleneck(self, x):
+    def _forward_until_bottleneck(self, x):
         x = self.base_arch(x)
         for i in range(0, ((self.bottleneck_index+1)*2)-1):
             x = self.fcn[i](x)

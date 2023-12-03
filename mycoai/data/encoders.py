@@ -218,7 +218,9 @@ class TaxonEncoder:
         A label encoder per level
     inference_matrices: list[torch.Tensor]
         List of tensors to multiply lower-level Softmax probabilities with to 
-        infer higher level (denotes which higher level a label is part of)'''
+        infer higher level (denotes which higher level a label is part of)
+    classes: list
+        List with number of known classes per taxonomic level'''
 
     def __init__(self, data):
         self.lvl_encoders = self.initialize_labels(data)
@@ -232,6 +234,7 @@ class TaxonEncoder:
             encoder = sklearn.preprocessing.LabelEncoder()
             encoder.fit(data[data[lvl]!=utils.UNKNOWN_STR][lvl].unique())
             lvl_encoders.append(encoder)
+        self.classes = [len(lvl_encoders[i].classes_) for i in range(6)]
         return lvl_encoders 
 
     def initialize_inference_matrices(self):
@@ -298,3 +301,8 @@ class TaxonEncoder:
             for i in range(matrix.shape[0]):
                 matrix[i] = matrix[i]/matrix[i].sum()
         self.train = False
+
+    def flat_label(self, y, lvl):
+        '''Maps y from specified level to unique number for ALL levels.'''
+        return torch.minimum(torch.full_like(y, sum(self.classes)), 
+                             y + sum(self.classes[:lvl]))

@@ -34,6 +34,17 @@ class MultiHead(torch.nn.Module):
         outputs = [self.softmax[i](self.output[i](x)) 
                    for i in range(len(self.output))]
         return outputs
+
+
+class AutoRegressive(MultiHead):
+    ''''Multi-head model for an auto-regressive prediction'''
+
+    def __init__(self, classes):
+        super().__init__(classes)
+
+    def forward(self, x, lvl):
+        '''Makes prediction using output head as specified by level'''
+        return self.softmax[lvl](self.output[lvl](x))
     
     
 class ChainedMultiHead(torch.nn.Module):
@@ -200,7 +211,7 @@ class SoftmaxTreeNode(torch.nn.Module):
             root.subtrees[lvl].append(torch.nn.ModuleList(subtrees)) 
         
         # Setting attributes
-        self.generator = utils.Generator(root.len_input, len(childs))
+        self.generator = utils.Generator(root.input_dim, len(childs))
         self.parent = parent # Save class indices 
         self.child_encodings = childs # (= TaxonEncoder encodings)
 
@@ -213,10 +224,10 @@ class SoftmaxTree(SoftmaxTreeNode):
     conditional probability given the parent, multiplied by the probability of
     the parent.'''
 
-    def __init__(self, classes, tax_encoder, len_input):
+    def __init__(self, classes, tax_encoder, input_dim):
         self.tax_encoder = tax_encoder
         self.classes = classes
-        self.len_input = len_input
+        self.input_dim = input_dim
         self.subtrees = [[] for i in range(5)]
         # Root is special instance of SoftmaxTreeNode
         super().__init__(None, torch.arange(classes[0]), self, 0)

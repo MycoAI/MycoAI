@@ -30,8 +30,7 @@ def train(fasta_filepath, save_model, base_arch_type, epochs, batch_size,
 
     # Defining model
     if base_arch_type == 'BERT':
-        base_arch = BERT(train_data.dna_encoder.length, 
-                         train_data.dna_encoder.vocab_size)
+        base_arch = BERT(train_data.dna_encoder.vocab_size)
         lvl_weights = Constant([0,0,0,0,0,1])
         output_head = 'infer_parent'
         fcn = []

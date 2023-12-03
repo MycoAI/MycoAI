@@ -1,6 +1,6 @@
 '''Implementation of transformer-based models for ITS classification 
 
-Transformer:
+Transformer (encoder-decoder):
     Publication: 'Attention Is All You Need' by Vaswani et al. (2017) 
                  (https://doi.org/10.48550/arXiv.1706.03762).
     Code:         https://nlp.seas.harvard.edu/annotated-transformer/ 
@@ -18,16 +18,15 @@ from mycoai import utils
 class BERT(torch.nn.Module):
     '''BERT base model, transformer encoder to be used for various tasks'''
 
-    def __init__(self, len_input, vocab_size, d_model=256, d_ff=512, h=8, N=6, 
-                 dropout=0.1, mode='default'):
+    def __init__(self, vocab_size, d_model=256, d_ff=512, h=8, N=6, dropout=0.1, 
+                 mode='default'):
         '''Initializes the transformer given the source/target vocabulary.
         
         Parameters
         ----------
-        len_input: int
-            Length of expected input sequences
         vocab_size: int
-            Number of unique tokens in vocabulary
+            Number of unique tokens in vocabulary. Can be the vocab_size
+            attribute of BytePairEncoder or KmerTokenizer. 
         d_model: int
             Dimension of sequence repr. (embedding) in model (default is 256)
         d_ff: int
@@ -46,7 +45,6 @@ class BERT(torch.nn.Module):
         self.src_pos_embed = PositionalEmbedding(d_model, vocab_size, dropout)
         self.encoder = Encoder(d_model, d_ff, h, N, dropout)
         self.mlm_layer = torch.nn.Linear(d_model, vocab_size)
-        self.len_input = len_input
         self.vocab_size = vocab_size
         self.d_model = d_model
         self.d_ff = d_ff
@@ -103,6 +101,92 @@ class BERT(torch.nn.Module):
         }
 
 
+class EncoderDecoder(torch.nn.Module):
+    '''Transformer encoder-decoder model'''
+
+    def __init__(self, vocab_size, classes, d_model=256, d_ff=512, h=8, 
+                 N_encoder=4, N_decoder=2, decoder_self_attn=True, dropout=0.1):
+        '''Initializes the transformer given the source/target vocabulary.
+        
+        Parameters
+        ----------
+        vocab_size: int
+            Number of unique tokens in vocabulary. Can be the vocab_size
+            attribute of a BytePairEncoder or KmerTokenizer object. 
+        classes: list 
+            List that indicates the number of taxonomic classes per level. Can 
+            be the classes attribute of a TaxonEncoder object.
+        d_model: int
+            Dimension of sequence repr. (embedding) in model (default is 512)
+        d_ff: int
+            Dimension of hidden layer FFN sublayers (default is 2048)
+        h: int
+            Number of heads used for multi-head self-attention (default is 8)
+        N_encoder: int
+            How many encoder layers the transformer has (default is 4)
+        N_decoder: int
+            How many encoder layers the transformer has (default is 2)
+        decoder_self_attn: bool
+            Whether or not the decoder should have self-attention (default True)
+        dropout: float
+            Dropout probability to use throughout network (default is 0.1)'''
+
+        super().__init__()
+        self.src_pos_embed = PositionalEmbedding(d_model, vocab_size, dropout)
+        self.encoder = Encoder(d_model, d_ff, h, N_encoder, dropout)
+        self.tgt_pos_embed = PositionalEmbedding(d_model,sum(classes)+2,dropout)
+        self.decoder = Decoder(d_model, d_ff, h, N_decoder, dropout, 
+                               decoder_self_attn)
+        
+        self.vocab_size = vocab_size
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.h = h
+        self.N_encoder = N_encoder
+        self.N_decoder = N_decoder
+        self.N = N_encoder + N_decoder
+        self.decoder_self_attn = decoder_self_attn
+
+        # Initialize parameters with Glorot / fan_avg.
+        for p in self.parameters():
+            if p.dim() > 1:
+                torch.nn.init.xavier_uniform_(p)
+
+    def forward(self, src, tgt):
+        '''Full pass through transformer (embedding, encoding, decoding)'''
+        src_mask = (src != utils.TOKENS['PAD']).unsqueeze(-2) # Mask padding
+        # No target mask used (model always only inputted with 'allowed' part)
+        tgt_mask = torch.ones_like(tgt, dtype=torch.bool).unsqueeze(-2) # All 1
+        memory = self.encode(src, src_mask)
+        return self.decode(memory, src_mask, tgt, tgt_mask)
+    
+    def encode(self, src, src_mask):
+        '''Given a source (and mask), retrieve encoded representation'''
+        src_embedding = self.src_pos_embed(src)
+        return self.encoder(src_embedding, src_mask)
+
+    def decode(self, encoding, src_mask, tgt, tgt_mask):
+        '''Given an encoding and target (+ masks), retrieve decoded repr.'''
+        tgt_embedding = self.tgt_pos_embed(tgt)
+        return self.decoder(tgt_embedding, encoding, src_mask, tgt_mask)
+    
+    def get_config(self):
+        config = {}
+        if hasattr(self, 'pretraining'):
+            config = {'pretraining': self.pretraining}
+        return {
+            'type':                 utils.get_type(self),
+            'd_model':              self.d_model,
+            'd_ff':                 self.d_ff,
+            'h':                    self.h,
+            'N':                    self.N,
+            'N_encoder':            self.N_encoder,
+            'N_decoder':            self.N_decoder,
+            'decoder_self_attn':    self.decoder_self_attn,
+            **config
+        }
+
+
 class Encoder(torch.nn.Module):
     '''N layers of consisting of self-attention and feed forward sublayers,
     gradually transforms input into encoded representation.'''
@@ -126,6 +210,41 @@ class Encoder(torch.nn.Module):
         for layer in self.layers:
             x = layer[1](x, lambda x: layer[0](x, x, x, mask))
             x = layer[3](x, layer[2])
+        return self.norm(x)
+    
+
+class Decoder(torch.nn.Module):
+    '''N layers of consisting of (masked) (self-)attention and FF sublayers,
+    gradually transforms encoder's output and output embedding into decoding'''
+
+    def __init__(self, d_model, d_ff, h, N, dropout, self_attention):
+        super().__init__()
+        layers = []
+        for i in range(N): 
+            self_attention_layers = []
+            if self_attention:
+                self_attention_layers = [
+                    MultiHeadAttention(h, d_model, dropout),  
+                    ResidualConnection(d_model, dropout)]
+            sublayers = torch.nn.ModuleList(
+                self_attention_layers + 
+                [MultiHeadAttention(h, d_model, dropout), # src attention
+                ResidualConnection(d_model, dropout),
+                FeedForward(d_model, d_ff, dropout), # feed forward network
+                ResidualConnection(d_model, dropout)])
+            layers.append(sublayers)
+        self.layers = torch.nn.ModuleList(layers)
+        self.norm = torch.nn.LayerNorm(d_model) 
+        self.self_attention = self_attention
+
+    def forward(self, x, m, src_mask, tgt_mask):
+        "Pass the input (and mask) through each layer in turn."
+        for layer in self.layers:
+            if self.self_attention:
+                x = layer[1](x, lambda x: layer[0](x, x, x, tgt_mask)) # self att.
+            x = layer[-3](x, lambda x: layer[-4](x, m, m, src_mask)) # src att.
+            x = layer[-1](x, layer[-2])
+
         return self.norm(x)
 
 
@@ -241,107 +360,3 @@ def attention(query, key, value, mask=None, dropout=None):
     if dropout is not None:
         p_attn = dropout(p_attn) 
     return torch.matmul(p_attn, value), p_attn
-
-
-# class Transformer(torch.nn.Module):
-#     '''Transformer encoder/decoder architecture. NOTE: this model is currently
-#     not implemented in a way to be integrated into mycoai.'''
-
-#     def __init__(self, src_vocab, tgt_vocab, d_model=512, d_ff=2048, h=8, N=6, 
-#                  dropout=0.1, max_len=5000):
-#         '''Initializes the transformer given the source/target vocabulary.
-        
-#         Parameters
-#         ----------
-#         src_vocab: TODO
-#             TODO
-#         tgt_vocab: TODO
-#             TODO
-#         d_model: int
-#             Dimension of sequence repr. (embedding) in model (default is 512)
-#         d_ff: int
-#             Dimension of hidden layer FFN sublayers (default is 2048)
-#         h: int
-#             Number of heads used for multi-head self-attention (default is 8)
-#         N: int
-#             How many encoder/decoder layers the transformer has (default is 6)
-#         dropout: float
-#             Dropout probability to use throughout network (default is 0.1)
-#         max_len: int
-#             Maximum supported length of input by pos. encoders (default is 5000)
-#         '''
-
-#         super().__init__()
-#         self.src_pos_embed = PositionalEmbedding(d_model, src_vocab, dropout, max_len)
-#         self.encoder = Encoder(d_model, d_ff, h, N, dropout)
-#         self.tgt_pos_embed = PositionalEmbedding(d_model, tgt_vocab, dropout, max_len)
-#         self.decoder = Decoder(d_model, d_ff, h, N, dropout)
-#         self.generator = Generator(d_model, tgt_vocab)
-
-#         # Initialize parameters with Glorot / fan_avg.
-#         for p in self.parameters():
-#             if p.dim() > 1:
-#                 torch.nn.init.xavier_uniform_(p)
-
-#     def forward(self, src, tgt, src_mask, tgt_mask):
-#         '''Full pass through transformer (embedding, encoding, decoding)'''
-#         memory = self.encode(src, src_mask)
-#         return self.decode(memory, src_mask, tgt, tgt_mask)
-
-#     def encode(self, src, src_mask):
-#         '''Given a source (and mask), retrieve encoded representation'''
-#         src_embedding = self.src_pos_embed(src)
-#         return self.encoder(src_embedding, src_mask)
-
-#     def decode(self, encoding, src_mask, tgt, tgt_mask):
-#         '''Given an encoding and target (+ masks), retrieve decoded repr.'''
-#         tgt_embedding = self.tgt_pos_embed(tgt)
-#         return self.decoder(tgt_embedding, encoding, src_mask, tgt_mask)
-
-
-# class Decoder(torch.nn.Module):
-#     '''N layers of consisting of (masked) (self-)attention and FF sublayers,
-#     gradually transforms encoder's output and output embedding into decoding'''
-
-#     def __init__(self, d_model, d_ff, h, N, dropout):
-#         super().__init__()
-#         layers = []
-#         for i in range(N): 
-#             sublayers = torch.nn.ModuleList([
-#                 MultiHeadAttention(h, d_model, dropout), # self attention
-#                 ResidualConnection(d_model, dropout),
-#                 MultiHeadAttention(h, d_model, dropout), # src attention
-#                 ResidualConnection(d_model, dropout),
-#                 FeedForward(d_model, d_ff, dropout), # feed forward network
-#                 ResidualConnection(d_model, dropout)
-#             ])
-#             layers.append(sublayers)
-#         self.layers = torch.nn.ModuleList(layers)
-#         self.norm = torch.nn.LayerNorm(d_model) 
-
-#     def forward(self, x, m, src_mask, tgt_mask):
-#         "Pass the input (and mask) through each layer in turn."
-#         for layer in self.layers:
-#             x = layer[1](x, lambda x: layer[0](x, x, x, tgt_mask)) # self att.
-#             x = layer[3](x, lambda x: layer[2](x, m, m, src_mask)) # src att.
-#             x = layer[5](x, layer[4])
-#         return self.norm(x)
-
-
-# def subsequent_mask(size): 
-#     "Mask out subsequent positions."
-#     attn_shape = (1, size, size)
-#     subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1).type(
-#         torch.uint8)
-#     return subsequent_mask == 0
-
-
-# class Generator(torch.nn.Module): 
-#     "Define standard linear + softmax generation step."
-
-#     def __init__(self, d_model, vocab):
-#         super(Generator, self).__init__()
-#         self.proj = torch.nn.Linear(d_model, vocab)
-
-#     def forward(self, x):
-#         return torch.nn.functional.log_softmax(self.proj(x), dim=-1)
