@@ -27,10 +27,10 @@ EVAL_METRICS = {
     'Accuracy': skmetric.accuracy_score,
     'Accuracy (balanced)': skmetric.balanced_accuracy_score,
     'Precision': partial(
-        skmetric.precision_score, average='macro', zero_division=np.nan),
+        skmetric.precision_score, average='macro', zero_division="warn"),
     'Recall': partial(
-        skmetric.recall_score, average='macro', zero_division=np.nan),
-    'F1': partial(skmetric.f1_score, average='macro', zero_division=np.nan),
+        skmetric.recall_score, average='macro', zero_division="warn"),
+    'F1': partial(skmetric.f1_score, average='macro', zero_division="warn"),
     'MCC': skmetric.matthews_corrcoef
 }
 

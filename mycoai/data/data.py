@@ -66,7 +66,7 @@ class Data:
                     plotter.counts_sunburstplot(self)
 
     def encode_dataset(self, dna_encoder, tax_encoder='categorical',
-                       valid_split=0.0, export_path=None):
+                       valid_split=0.0, export_path=None, k=4):
         '''Converts data into a mycoai TensorData object
 
         Parameters
@@ -100,8 +100,10 @@ class Data:
         if type(dna_encoder) == str:
             if dna_encoder == 'bpe':
                 dna_encoder = dna_encs[dna_encoder](self)
-            else:
+            elif dna_encoder == '4d':
                 dna_encoder = dna_encs[dna_encoder]()
+            else:
+                dna_encoder = dna_encs[dna_encoder](k)
         if not self.labelled():
             print("No data labels have been imported.")
             print("If the data is labelled, specify tax_parser in init.")

@@ -191,8 +191,9 @@ class DeepITSTrainer:
                         results.append(metrics[m][lvl](y_pred_i, y_lvl).item())
                     else:
                         argmax_y_pred = torch.argmax(y_pred_i, dim=1)
-                        print("argmax_y_pred: ", argmax_y_pred.cpu())
-                        print("y_lvl: ", y_lvl.cpu())
+                        #print("argmax_y_pred: ", argmax_y_pred.cpu())
+                        #print("y_lvl: ", y_lvl.cpu())
+                        #print(metrics[m])
                         results.append(metrics[m](y_lvl.cpu().numpy(),
                                                   argmax_y_pred.cpu().numpy()))
 

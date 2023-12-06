@@ -29,8 +29,9 @@ class TrainConfig:
     def __init__(self, file_path=None):
         # Default values
         self.dna_encoder = 'kmer-spectral'
+        self.kmer_size = 4
         self.tax_encoder = 'categorical'
-        self.epochs = 100
+        self.epochs = 10
         self.batch_size = 32
         self.fcn_layers = [128, 20, 64]
         self.optimizer = 'Adam'
@@ -70,45 +71,6 @@ class TrainConfig:
             return value
 
 
-
-    def set_epochs(self, epochs):
-        self.epochs = epochs
-    def set_batch_size(self, batch_size):
-        self.batch_size = batch_size
-
-    def set_fcn_layers(self, fcn_layers):
-        self.fcn_layers = fcn_layers
-    def set_optimizer(self, optimizer):
-        self.optimizer = optimizer
-    def set_weighted_loss(self, weighted_loss):
-        self.weighted_loss = weighted_loss
-    def set_warmup_steps(self, warmup_steps):
-        self.warmup_steps = warmup_steps
-    def set_dropout(self, dropout):
-        self.dropout = dropout
-
-    def set_sample(self, sample):
-        self.sampler = sample
-    def set_loss_function(self, loss_function):
-        self.loss_function = loss_function
-    def set_output_heads(self, output_heads):
-        self.output_heads = output_heads
-    def set_dna_encoder(self, dna_encoder):
-        self.dna_encoder = dna_encoder
-    def set_tax_encoder(self, tax_encoder):
-        self.tax_encoder = tax_encoder
-    def set_sequence_length_filter_tolerance(self, sequence_length_filter_tolerance):
-        self.sequence_length_filter_tolerance = sequence_length_filter_tolerance
-    def set_sequence_quality_filter_tolerance(self, sequence_quality_filter_tolerance):
-        self.sequence_quality_filter_tolerance = sequence_quality_filter_tolerance
-
-    def set_learning_rate(self, learning_rate):
-        self.learning_rate = learning_rate
-
-    def set_weight_decay(self, weight_decay):
-        self.weight_decay = weight_decay
-    def set_weight_schedule(self, weight_schedule):
-        self.weight_schedule = weight_schedule
 
 class Train:
 
@@ -166,8 +128,9 @@ class Train:
 
         if args.model == 'cnn':
             hyperparameters.fcn_layers= []
-            hyperparameters.output_heads = 'single'
+            hyperparameters.output_heads = 'multi'
             hyperparameters.dna_encoder = 'kmer-spectral'
+            hyperparameters.kmer_size = 6
         elif args.model == 'resnet':
             hyperparameters.dna_encoder = '4d'
             hyperparameters.output_heads = 'multi'
@@ -178,16 +141,18 @@ class Train:
 
         # Data import & preprocessing
         in_data = Data(args.train_data)
+        if hyperparameters.sequence_length_filter_tolerance is not None:
+            in_data = in_data.sequence_length_filter(tolerance=hyperparameters.sequence_length_filter_tolerance)
+        if hyperparameters.sequence_quality_filter_tolerance is not None:
+            in_data = in_data.sequence_quality_filter(tolerance=hyperparameters.sequence_quality_filter_tolerance)
+
         if args.valid_data_split > 0:
-            train_data, valid_data =  train_data, valid_data = in_data.encode_dataset(hyperparameters.dna_encoder, hyperparameters.tax_encoder, valid_split=args.valid_data_split)
+            train_data, valid_data = in_data.encode_dataset(hyperparameters.dna_encoder, hyperparameters.tax_encoder, valid_split=args.valid_data_split, k=hyperparameters.kmer_size)
         else:
-            train_data, valid_data = in_data.encode_dataset(hyperparameters.dna_encoder, hyperparameters.tax_encoder, valid_split=args.valid_data_split)
+            train_data = in_data.encode_dataset(hyperparameters.dna_encoder, hyperparameters.tax_encoder,valid_split=0.0, k=hyperparameters.kmer_size)
             valid_data = None
 
-        if hyperparameters.sequence_length_filter_tolerance is not None:
-            train_data = train_data.sequence_length_filter(tolerance=hyperparameters.sequence_length_filter_tolerance)
-        if hyperparameters.sequence_quality_filter_tolerance is not None:
-            train_data = train_data.sequence_quality_filter(tolerance=hyperparameters.sequence_quality_filter_tolerance)
+
 
 
 
@@ -195,7 +160,7 @@ class Train:
         if (args.model == 'resnet'):
             base_arch = ResNet([2, 2, 2, 2])
         elif (args.model == 'cnn'):
-            base_arch = CNN(len(utils.LEVELS))
+            base_arch = CNN(nb_classes=len(utils.LEVELS), input_length=train_data.sequences.shape[2])
         elif (args.model == 'bert'):
             base_arch = BERT(train_data.dna_encoder.len_input,
                              train_data.dna_encoder.vocab_size)
