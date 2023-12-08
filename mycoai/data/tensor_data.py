@@ -50,8 +50,8 @@ class TensorData(torch.utils.data.Dataset):
     def import_data(self, import_path):
         '''Imports encoded sequences and taxonomies'''
         content = torch.load(import_path)
-        self.sequences = content['sequences']
-        self.taxonomies = content['taxonomies']
+        self.sequences = content['sequences'].to(utils.DEVICE)
+        self.taxonomies = content['taxonomies'].to(utils.DEVICE)
         self.dna_encoder = content['dna_encoder']
         self.tax_encoder = content['tax_encoder']
         self.name = content['name']

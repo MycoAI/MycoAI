@@ -4,10 +4,8 @@ import torch
 import numpy as np
 import pandas as pd
 from mycoai import utils, data
-from mycoai.deep.models.output_heads import SingleHead, TokenizedLevels
-from mycoai.deep.models.output_heads import MultiHead, ChainedMultiHead
-from mycoai.deep.models.output_heads import SumInference, ParentInference 
-from mycoai.deep.models.transformers import BERT
+import mycoai.deep.models.output_heads as mmo
+from mycoai.deep.models.transformers import BERT, EncoderDecoder
 
 class DeepITSClassifier(torch.nn.Module): 
     '''Fungal taxonomic classification model based on ITS sequences. 
@@ -44,8 +42,7 @@ class DeepITSClassifier(torch.nn.Module):
         self.dna_encoder = dna_encoder
         self.tax_encoder = tax_encoder 
         self.classes = torch.tensor(
-            [len(self.tax_encoder.lvl_encoders[i].classes_) 
-             for i in self.target_levels])
+            [self.tax_encoder.classes[i] for i in self.target_levels])
         self.base_arch = base_arch
         self.dropout = torch.nn.Dropout(dropout)
         
@@ -54,6 +51,12 @@ class DeepITSClassifier(torch.nn.Module):
                 self.base_arch.set_mode('classification', self.target_levels)
             else:
                 self.base_arch.set_mode('classification')
+        if type(self.base_arch) == EncoderDecoder:
+            self.forward = self._forward_encoder_decoder
+            output = 'autoreg'
+        else:
+            self.forward = self._forward
+        d_hidden = getattr(self.base_arch, 'd_model', None)
 
         # The fully connected part
         fcn = []
@@ -65,17 +68,22 @@ class DeepITSClassifier(torch.nn.Module):
             self.bottleneck_index = np.argmin(fcn_layers)
         
         if output == 'single':
-            self.output = SingleHead(self.classes)
+            self.output = mmo.SingleHead(self.classes)
         elif output == 'multi':
-            self.output = MultiHead(self.classes)
+            self.output = mmo.MultiHead(self.classes)
         elif output == 'chained':
-            self.output = ChainedMultiHead(self.classes, *chained_config)
+            self.output = mmo.ChainedMultiHead(self.classes, *chained_config)
+            self.chained_config = chained_config
         elif output == 'infer_sum':
-            self.output = SumInference(self.classes, self.tax_encoder)
+            self.output = mmo.SumInference(self.classes, self.tax_encoder)
         elif output == 'infer_parent':
-            self.output = ParentInference(self.classes, self.tax_encoder)
+            self.output = mmo.ParentInference(self.classes, self.tax_encoder)
         elif output == 'tokenized':
-            self.output = TokenizedLevels(self.classes)
+            self.output = mmo.TokenizedLevels(self.classes)
+        elif output == 'tree':
+            self.output = mmo.SoftmaxTree(self.classes, tax_encoder, d_hidden)
+        elif output == 'autoreg':
+            self.output = mmo.AutoRegressive(self.classes)
             
         self.to(utils.DEVICE)
 
@@ -86,15 +94,47 @@ class DeepITSClassifier(torch.nn.Module):
         levels_indices.sort()
         return levels_indices
 
-    def forward(self, x):
+    def _forward(self, x):
         x = self.base_arch(x) 
         for fcn_layer in self.fcn:
             x = fcn_layer(x)
         x = self.output(x)
         return x
+    
+    def _forward_encoder_decoder(self, x, y=None):
+        if y is None:
+            return self._forward_autoregressive(x)
+        else:
+            return self._forward_teacher_forcing(x, y)
+    
+    def _forward_autoregressive(self, x):
+        '''Input decoder with prediction at previous token'''
+        # Initialize target with CLS token (=0 for decoder)
+        tgt = torch.zeros((x.shape[0],1), dtype=int, device=utils.DEVICE) 
+        output = []
+        for lvl in range(6): #NOTE Only target_levels==ALL supported right now..
+            x_ = self.base_arch(x, tgt)[:,lvl]
+            x_ = self.output(x_, lvl)
+            output.append(x_)
+            pred = 1 + self.tax_encoder.flat_label(torch.argmax(x_,dim=-1), lvl)
+            tgt = torch.cat((tgt, pred.unsqueeze(1)), dim=1)
+        return output
+
+    def _forward_teacher_forcing(self, x, y):
+        '''Input decoder with true target label'''
+        # Initialize target with CLS token (=0 for decoder)
+        tgt = torch.zeros((x.shape[0],1), dtype=int, device=utils.DEVICE) 
+        output = []
+        for lvl in range(6): #NOTE Only target_levels==ALL supported right now..
+            x_ = self.base_arch(x, tgt)[:,lvl]
+            x_ = self.output(x_, lvl)
+            output.append(x_)
+            next = 1 + self.tax_encoder.flat_label(y[:,lvl], lvl)
+            tgt = torch.cat((tgt, next.unsqueeze(1)), dim=1)
+        return output       
 
     # TODO reimplement dimensionality reduction (use old mycoai version)
-    def forward_until_bottleneck(self, x):
+    def _forward_until_bottleneck(self, x):
         x = self.base_arch(x)
         for i in range(0, ((self.bottleneck_index+1)*2)-1):
             x = self.fcn[i](x)
@@ -105,7 +145,8 @@ class DeepITSClassifier(torch.nn.Module):
         returns a pandas DataFrame.'''
 
         if type(input_data) == str:
-            input_data = data.Data(input_data, tax_parser=None)
+            input_data = data.Data(input_data, tax_parser=None, 
+                                   allow_duplicates=True)
         if type(input_data) == data.Data:
             input_data = input_data.encode_dataset(self.dna_encoder)
         if type(input_data) != data.TensorData:
@@ -152,9 +193,13 @@ class DeepITSClassifier(torch.nn.Module):
         '''Returns configuration dictionary of this instance.'''
         dna_encoder = utils.get_config(self.dna_encoder, 'dna_encoder')
         base_arch = utils.get_config(self.base_arch, 'base_arch')
+        dummy = [None, None, None]
         config = {
             'fcn': [self.fcn[i].out_features for i in range(0,len(self.fcn),2)],
             'output_type': utils.get_type(self.output),
+            'output_chained_ascending':getattr(self,'chained_config', dummy)[0],
+            'output_chained_use_probs':getattr(self,'chained_config', dummy)[1],
+            'output_chained_allaccess':getattr(self,'chained_config', dummy)[2],
             'target_levels': self.target_levels,
             'train_ref': getattr(self, 'train_ref', None)
         }

@@ -22,7 +22,8 @@ class DeepITSTrainer:
     def train(model, train_data, valid_data=None, epochs=100, loss=None,
               batch_size=64, sampler=None, optimizer=None, 
               metrics=utils.EVAL_METRICS, weight_schedule=None, 
-              warmup_steps=None, wandb_config={}, wandb_name=None):
+              p_teacher_forcing=0, warmup_steps=None, wandb_config={}, 
+              wandb_name=None):
         '''Trains a neural network to classify ITS sequences
   
         Parameters
@@ -54,7 +55,12 @@ class DeepITSTrainer:
         warmup_steps: int | NoneType
             When specified, the lr increases linearly for the first warmup_steps 
             then decreases proportionally to 1/sqrt(step_number). Works only for
-            models with d_model attribute (e.g. BERT) (default is 0).
+            models with d_model attribute (BERT/EncoderDecoder) (default is 0).
+        p_teacher_forcing: float
+            Float between 0 and 1 that indicates the probability of teacher
+            forcing for a batch. Teacher forcing inputs decoder with true 
+            (masked) target labels instead of doing an autoregressive 
+            prediction. Works only for EncoderDecoder model (default is False).
         wandb_config: dict
             Extra information to be added to weights and biases config data.
         wandb_name: str
@@ -116,9 +122,13 @@ class DeepITSTrainer:
                 # Make a prediction
                 x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
                 optimizer.zero_grad()
+                teacher_forcing = np.random.binomial(1, p_teacher_forcing)
                 with torch.autocast(device_type=utils.DEVICE.type, dtype=prec, 
                                     enabled=utils.MIXED_PRECISION):
-                    y_pred = model(x)
+                    if teacher_forcing:
+                        y_pred = model(x, y)
+                    else:
+                        y_pred = model(x)
                     # Learning step
                     losses = torch.cat([loss[lvl](y_pred[i],y[:,lvl]).reshape(1)
                                   for i, lvl in enumerate(model.target_levels)])

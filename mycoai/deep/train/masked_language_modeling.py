@@ -59,14 +59,19 @@ class MLMTrainer:
         # Loss and optimizer
         loss_function = torch.nn.CrossEntropyLoss( # Ignore padding
             label_smoothing=label_smoothing, ignore_index=utils.TOKENS['PAD'])
-        if optimizer is None: # Use Adam as default
-            optimizer = torch.optim.Adam(model.parameters(), lr=0.1, 
-                                         betas=(0.9,0.98))
-        if warmup_steps is None: # Constant learning rate as default
-            lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                        optimizer, lambda step: 0.0001) 
+        # Loss and optimizer    
+        if warmup_steps is None: # Constant learning 
+            if optimizer is None:
+                optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
+                                             betas=(0.9,0.98))
+            lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, 
+                                                             lambda step: 1)
         else: # Initialize lr scheduler if warmup_steps is specified
-            schedule = train.LrSchedule(model.d_model, warmup_steps)
+            if optimizer is None:
+                optimizer = torch.optim.Adam(model.parameters(), lr=1, 
+                                             betas=(0.9,0.98))
+            # NOTE If you specify an optimizer here, the lr will be weighted
+            schedule = train.LrSchedule(model.d_model, warmup_steps) 
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                                   optimizer, lambda step: schedule.get_lr(step))
             
@@ -138,7 +143,7 @@ class MLMTrainer:
         '''Maks a batch of sequence data for MLM'''
 
         # Calculate boolean tensors using selection probabilities
-        select = ((torch.rand(x.shape) < p_mlm) & # Select for MLM
+        select = ((torch.rand(x.shape, device=utils.DEVICE) < p_mlm) & # Select 
                     (x != utils.TOKENS['PAD']) & # Can't select...
                     (x != utils.TOKENS['SEP']) & # ... special tokens
                     (x != utils.TOKENS['CLS_P']) &
@@ -147,7 +152,8 @@ class MLMTrainer:
                     (x != utils.TOKENS['CLS_F']) &
                     (x != utils.TOKENS['CLS_G']) &
                     (x != utils.TOKENS['CLS_S'])) 
-        probs = torch.rand(x.shape)
+                    
+        probs = torch.rand(x.shape, device=utils.DEVICE)
         masked = select & (probs < p_mask)
         random = select & (probs >= p_mask) & (probs < p_mask + p_random)
 
@@ -158,7 +164,8 @@ class MLMTrainer:
             len(utils.TOKENS), # Exclude special tokens 
             vocab_size,
             (torch.sum(random).item(),), 
-            dtype=torch.long)
+            dtype=torch.long,
+            device=utils.DEVICE)
         # The rest for which select is True remains unchanged
         y[~select] =  utils.TOKENS['PAD'] # Pad those not selected
 
