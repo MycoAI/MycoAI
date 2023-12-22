@@ -146,12 +146,7 @@ class MLMTrainer:
         select = ((torch.rand(x.shape, device=utils.DEVICE) < p_mlm) & # Select 
                     (x != utils.TOKENS['PAD']) & # Can't select...
                     (x != utils.TOKENS['SEP']) & # ... special tokens
-                    (x != utils.TOKENS['CLS_P']) &
-                    (x != utils.TOKENS['CLS_C']) &
-                    (x != utils.TOKENS['CLS_O']) &
-                    (x != utils.TOKENS['CLS_F']) &
-                    (x != utils.TOKENS['CLS_G']) &
-                    (x != utils.TOKENS['CLS_S'])) 
+                    (x != utils.TOKENS['CLS'])) 
                     
         probs = torch.rand(x.shape, device=utils.DEVICE)
         masked = select & (probs < p_mask)

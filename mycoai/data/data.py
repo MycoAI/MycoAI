@@ -41,6 +41,12 @@ class Data:
         name: str
             Name of dataset. Will be inferred from filename if None.'''
         
+        # Small hack to allow creating a Data object from a pd.DataFrame
+        if type(filepath) == pd.DataFrame:
+            self.data = filepath
+            self.name = name
+            return
+
         tax_parsers = {'unite':  self.unite_parser}
         if type(tax_parser) == str:
             tax_parser = tax_parsers[tax_parser]
@@ -66,7 +72,7 @@ class Data:
                     plotter.counts_sunburstplot(self) 
 
     def encode_dataset(self, dna_encoder, tax_encoder='categorical',
-                       valid_split=0.0, export_path=None):
+                       export_path=None):
         '''Converts data into a mycoai TensorData object
         
         Parameters
@@ -80,17 +86,13 @@ class Data:
             Specifies the encoder used for generating the taxonomies tensor.
             Can be an existing object, or 'categorical', which will 
             initialize an encoder of that type  (default is 'categorical')
-        valid_split: float
-            If >0, will split data in valid/train at ratio (default is 0.0)
         export_path: list | str
-            Path to save encodings to. Needs to be type `list' (length 2) when 
-            valid_split > 0. First element of that list should refer to the 
-            train export_path, second to the valid path (default is None)'''
+            Path to save encodings to (default is None)'''
 
         if utils.VERBOSE > 0:
             print("Encoding the data into network-readable format...")
 
-        # Initialize encoding methods
+        # INITIALIZING
         dna_encs = {'4d':            encoders.FourDimDNA,
                     'kmer-tokens':   encoders.KmerTokenizer,
                     'kmer-onehot':   encoders.KmerOneHot,
@@ -110,37 +112,10 @@ class Data:
         elif type(tax_encoder) == str:
             tax_encoder = tax_encs[tax_encoder](self.data)
 
-        if valid_split > 0:
-            train_df, valid_df = train_test_split(self.data, 
-                                                  test_size=valid_split)
-            data = self._encode_subset(train_df, dna_encoder, tax_encoder, 
-                                       self.name + f' ({1-valid_split})')
-            valid_data = self._encode_subset(valid_df, dna_encoder, tax_encoder, 
-                                             self.name + f' ({valid_split})')
-        else:
-            data = self._encode_subset(self.data, dna_encoder, tax_encoder, 
-                                                                      self.name)
-    
-        if utils.VERBOSE > 0 and self.labelled():
-            data.labels_report() 
-            data.unknown_labels_report() if tax_encoder is not None else 0
-
-        if valid_split > 0:
-            if export_path is not None:
-                data.export_data(export_path[0])
-                valid_data.export_data(export_path[1])
-            return data, valid_data
-        else:
-            data.export_data(export_path) if export_path is not None else 0
-            return data
-
-    @staticmethod
-    def _encode_subset(dataframe, dna_encoder, tax_encoder, name):
-        '''Encodes dataframe given the specified encoders'''
-
+        # ENCODING        
         # Loop through the data, encode sequences and labels 
         sequences, taxonomies = [], []
-        for index, row in tqdm(dataframe.iterrows()):
+        for index, row in tqdm(self.data.iterrows()):
             sequences.append(dna_encoder.encode(row['sequence']))
             taxonomies.append(tax_encoder.encode(row))
 
@@ -150,9 +125,34 @@ class Data:
         # Convert to tensors and store
         sequences = torch.stack(sequences)
         taxonomies = torch.stack(taxonomies)
-        data = TensorData(sequences, taxonomies, dna_encoder, tax_encoder, name)
+        data = TensorData(sequences, taxonomies, dna_encoder, tax_encoder, 
+                          self.name)
+    
+        if utils.VERBOSE > 0 and self.labelled():
+            data.labels_report() 
+            data.unknown_labels_report() if tax_encoder is not None else 0
 
+        data.export_data(export_path) if export_path is not None else 0
         return data
+    
+    def train_valid_split(self, valid_split, export_fasta=False):
+        '''Splits up the mycoai.Data object into a train and validation split.
+        Writes fasta file if export_fasta is True. If type(export_fasta)==list,
+        will write train and valid data to specified filepaths.'''
+
+        train, valid = train_test_split(self.data, test_size=valid_split)
+        train = Data(train, name=self.name + f' ({1-valid_split})')
+        valid = Data(valid, name=self.name + f' ({valid_split})')
+
+        if export_fasta:
+            if type(export_fasta) == list:
+                train.export_fasta(export_fasta[0])
+                valid.export_fasta(export_fasta[1])
+            else:
+                train.export_fasta(train.name + '.fasta')
+                valid.export_fasta(valid.name + '.fasta')
+
+        return train, valid
 
     def read_fasta(self, filename, tax_parser=None):
         '''Reads a FASTA file into a Pandas dataframe'''
@@ -225,6 +225,35 @@ class Data:
             data_row[6] = data_row[6].split(addition)[0]
 
         return data_row
+    
+    def label_cascade(self):
+        '''Creates new child labels for samples with parent labels that only 
+        have unidentified children in the dataset. E.g. when a certain genus 
+        never has identified species, create a new species for this genus such 
+        that it won't be missed when training only on species-level.'''
+
+        print(self.num_classes_per_level())
+        self.unknown_labels_report()
+        print('start')
+        for i, lvl in enumerate(utils.LEVELS[:5]): # From phylum to genus
+            # Calculate number of unique subclasses
+            next_lvl = utils.LEVELS[i+1] 
+            count = self.data[[lvl, next_lvl]].groupby(lvl, 
+                                                       as_index=False).nunique()
+            # Find parents with 1 child on next lvl
+            one_child = count[(count[next_lvl] == 1) & 
+                              (count[lvl] != utils.UNKNOWN_STR)][lvl] 
+            # Find rows for which the only child is the unidentified class
+            only_unk = self.data[(self.data[lvl].isin(one_child)) &
+                                 (self.data[next_lvl] == utils.UNKNOWN_STR)]
+            # Create new labels (parent + class indicator) for these rows
+            new_labels = only_unk[lvl] + '_' + next_lvl[0] 
+            self.data.loc[only_unk.index, next_lvl] = new_labels
+        print('finish')
+        print(self.num_classes_per_level())
+        self.unknown_labels_report()
+
+        return self.data
     
     def length_report(self):
         '''Prints min, max, median, and std of sequences in dataframe.'''
@@ -318,6 +347,18 @@ class Data:
             if lvl not in self.data.columns:
                 return False
         return True
+
+    def unknown_labels_report(self):
+        '''Prints the number of unrecognized target labels on each level.'''
+        print("No. unrecognized target labels:")
+        exact = (self.data[utils.LEVELS] == utils.UNKNOWN_STR).sum()
+        perc = 100 * exact / len(self.data)
+        table = pd.DataFrame([['Exact (#)'] + list(exact.values), 
+                              ['Perc. (%)'] + list(perc.values)], 
+                             columns=[''] + utils.LEVELS)
+        table = table.set_index([''])
+        table = table.round(1)
+        print(table)
 
     def num_classes_per_level(self):
         '''Number of classes per taxonomic level'''

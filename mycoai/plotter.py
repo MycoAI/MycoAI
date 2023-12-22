@@ -45,11 +45,11 @@ def counts_sunburstplot(dataprep, id=''):
     id = '_' + id if len(id) > 0 else ''
     pio.write_image(fig, utils.OUTPUT_DIR + "sunburst" + id + ".png", scale=4)
 
-def classification_learning_curve(history, metric_name, target_levels, 
+def classification_learning_curve(history, metric_name, levels, 
                                   show_valid=True, show_train=False):
-    '''Plots the learning curves for a single metric on all target levels'''
+    '''Plots the learning curves for a single metric on all specified levels'''
     
-    for lvl in target_levels:
+    for lvl in levels:
         valid_plot = False
         if show_valid:
             valid_plot = plt.plot(
@@ -83,5 +83,5 @@ def confusion_matrices(model, data):
             matrix = skmetric.confusion_matrix(y[:,i].cpu(), argmax_y_pred)
             plt.imshow(matrix)
             plt.savefig(utils.OUTPUT_DIR + '/' + 
-                        utils.LEVELS[model.target_levels[i]] + '.png')
+                        utils.LEVELS[i] + '.png')
             plt.close()

@@ -25,7 +25,6 @@ IUPAC_ENCODING = {'A':[1,    0,    0,    0   ],
                   'H':[0.33, 0.33, 0,    0.33],
                   'V':[0.33, 0.33, 0.33, 0   ],
                   'N':[0.25, 0.25, 0.25, 0.25]}
-CLS_PREFIX = [utils.TOKENS[f'CLS_{lvl}'] for lvl in ['P','C','O','F','G','S']]
 
 class DNAEncoder:
     '''Base class for nucleotide encoders'''
@@ -68,12 +67,11 @@ class BytePairEncoder(DNAEncoder):
                                        vocab_size=vocab_size,
                                        model_type='bpe',
                                        model_writer=mem_stream,
-                                       bos_id = utils.TOKENS['CLS_P'],
+                                       bos_id = utils.TOKENS['CLS'],
                                        eos_id = utils.TOKENS['SEP'],
                                        pad_id = utils.TOKENS['PAD'],
                                        unk_id = utils.TOKENS['UNK'],
-                                       control_symbols = ['MASK', 'CLS_C', 
-                                            'CLS_O', 'CLS_F', 'CLS_G', 'CLS_S'],
+                                       control_symbols = ['MASK'],
                                        add_dummy_prefix = False,
                                        character_coverage=1.0)
         
@@ -84,8 +82,8 @@ class BytePairEncoder(DNAEncoder):
     def encode(self, sequence):
         '''Encodes a single data row using the BPE encoder'''
         seq = re.sub('[^ACTG]', '?', sequence)
-        encoding = self.sp.encode(seq)[:self.length-7] # Leave room for CLS/PAD
-        encoding = CLS_PREFIX + encoding + [utils.TOKENS['SEP']] 
+        encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
+        encoding = [utils.TOKENS[f'CLS']] + encoding + [utils.TOKENS['SEP']] 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.long)
 
@@ -125,7 +123,7 @@ class KmerTokenizer(KmerEncoder):
 
     def encode(self, sequence):
         '''Encodes data row, returns tensor of (kmer-based) token encodings'''
-        encoding = CLS_PREFIX
+        encoding = [utils.TOKENS[f'CLS']]
         seq = self._seq_preprocess(sequence)
         i = 0
         while i + self.k <= len(seq) and len(encoding) < self.length-1:
@@ -155,7 +153,7 @@ class KmerOneHot(KmerEncoder):
 
     def encode(self, sequence):
         '''Encodes data row, returns tensor of (kmer-based) one-hot encodings'''
-        encoding = [self._get_onehot_vector(token) for token in CLS_PREFIX] 
+        encoding = [self._get_onehot_vector(utils.TOKENS[f'CLS'])] 
         seq = self._seq_preprocess(sequence)
         i = 0
         while i + self.k <= len(seq) and len(encoding) < self.length-1:
@@ -210,7 +208,7 @@ class TaxonEncoder:
     Parameters
     ----------
     data: pd.DataFrame
-        Containing the UniteData. Must be sorted (ascending order)!
+        Containing the ITS data.
         
     Attributes
     ----------
@@ -290,6 +288,7 @@ class TaxonEncoder:
         '''Decodes an array of index labels into their corresponding strings'''
         decoding = []
         for i, l in enumerate(levels):
+            l = utils.LEVELS.index(l)
             decoding.append(self.lvl_encoders[l].inverse_transform(labels[:,i]))
         decoding = np.stack(decoding,axis=1)
         return decoding

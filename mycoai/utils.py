@@ -4,6 +4,7 @@ import git
 import torch
 import warnings
 import wandb
+import os
 import numpy as np
 import sklearn.metrics as skmetric
 from pathlib import Path
@@ -21,8 +22,7 @@ MIXED_PRECISION = True
 WANDB_PROJECT = 'ITS Classification'
 MAX_LEN = 5000 # Max length of positional encodings transformers
 # NOTE Be careful with changing this one: BPE assumes TOKENS['MASK'] == 0 etc.
-TOKENS = {'MASK':0, 'SEP':1, 'PAD':2, 'UNK':3, 'CLS_P':4, 'CLS_C':5, 'CLS_O':6,
-          'CLS_F':7, 'CLS_G':8, 'CLS_S':9}
+TOKENS = {'MASK':0, 'SEP':1, 'PAD':2, 'UNK':3, 'CLS':4}
 EVAL_METRICS = {
     'Accuracy': skmetric.accuracy_score,
     'Accuracy (balanced)': skmetric.balanced_accuracy_score,
@@ -100,6 +100,8 @@ def get_sampler_config(sampler):
         sampler_config.update({'lvl': sampler.lvl})
     if hasattr(sampler, 'unknown_frac'):
         sampler_config.update({'unknown_frac': sampler.unknown_frac})
+    if hasattr(sampler, 'strength'):
+        sampler_config.update({'strength': sampler.strength})
     return {'type': get_type(sampler), **sampler_config}
 
 def get_loss_config(loss):
@@ -116,6 +118,10 @@ def get_general_config():
             'mixed_precision':  MIXED_PRECISION,
             'git_commit':       repo.head.object.hexsha,
             'max_per_epoch':    MAX_PER_EPOCH}
+
+def remove_file(path):
+    '''Deletes file'''
+    os.remove(path)
 
 class Generator(torch.nn.Module):
     '''Linear transformation + softmax'''

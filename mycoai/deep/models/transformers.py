@@ -58,10 +58,9 @@ class BERT(torch.nn.Module):
             if p.dim() > 1:
                 torch.nn.init.xavier_uniform_(p)
 
-    def set_mode(self, mode, target_levels=5):
+    def set_mode(self, mode):
         '''Uses alternative forward method when mode == 'classificiation'.'''
         if mode == 'classification':
-            self.target_levels = target_levels
             self.forward = self._forward_classification
         elif mode == 'mlm':
             self.forward = self._forward_mlm
@@ -77,8 +76,8 @@ class BERT(torch.nn.Module):
         '''Given input sequence, retrieve embedding aggregated in CLS token'''
         src_mask = (src != utils.TOKENS['PAD']).unsqueeze(-2) # Mask padding
         src_embedding = self.src_pos_embed(src) 
-        # Return only the part of the tensor that corresponds to CLS tokens
-        return self.encoder(src_embedding, src_mask)[:,self.target_levels,:]
+        # Return only the part of the tensor that corresponds to CLS token
+        return self.encoder(src_embedding, src_mask)[:,0,:]
 
     def _forward_mlm(self, src):
         '''Given input sequence, predict masked tokens'''

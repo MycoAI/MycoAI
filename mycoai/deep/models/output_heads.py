@@ -4,19 +4,69 @@ tensors (one for each level).'''
 import torch
 from mycoai import utils
 
-class SingleHead(torch.nn.Module):
-    '''Predicting a single taxon level.'''
-    
-    def __init__(self, classes):
-        super().__init__()
 
-        self.fc1 = torch.nn.LazyLinear(out_features=classes)
+class InferParent(torch.nn.Module):
+    '''Infers parent classes by looking in the inference matrix and seeing what
+    parent a child class is most often part of.'''
+
+    def __init__(self, classes, tax_encoder, base_level='species'):
+        super().__init__()
+        self.tax_encoder = tax_encoder
+        self.base_level = utils.LEVELS.index(base_level)
+        self.fc1 = torch.nn.LazyLinear(out_features=classes[self.base_level])
         self.softmax = torch.nn.Softmax(dim=1) 
+        self.classes = classes
 
     def forward(self, x):
-        x = self.fc1(x)
-        output = self.softmax(x)
-        return [output]
+        
+        # Initialize output list with zeros until base level
+        output = [torch.zeros((x.shape[0], self.classes[lvl]), device=x.device)
+                                         for lvl in range(5,self.base_level,-1)]
+        
+        # At base level, make a prediction
+        x = self.fc1(x) # Linear layer
+        output.insert(0, self.softmax(x)) # Softmax
+        _, pred = torch.max(output[0],1) # Get argmax
+
+        # Above base level, infer parents 
+        for i in range(self.base_level-1,-1,-1): 
+            # Get parent indices by retrieving the argmax of inference matrix
+            _, pred = torch.max(self.tax_encoder.inference_matrices[i][pred], 1)
+            # Mimick probability tensor by one-hot encoding
+            probs = torch.zeros((pred.shape[0], self.classes[i]))
+            probs[torch.arange(pred.shape[0]), pred] = 1
+            output.insert(0, probs.to(x.device))
+
+        return output
+
+
+class InferSum(torch.nn.Module):
+    '''Sums softmax probabilities of child classes to infer the probability of 
+    a parent, using inference matrices.'''
+
+    def __init__(self, classes, tax_encoder, base_level='species'):
+        super().__init__()
+        self.tax_encoder = tax_encoder
+        self.base_level = utils.LEVELS.index(base_level)
+        self.fc1 = torch.nn.LazyLinear(out_features=classes[self.base_level])
+        self.softmax = torch.nn.Softmax(dim=1) 
+        self.classes = classes
+    
+    def forward(self, x):
+        
+        # Initialize output list with zeros until base level
+        output = [torch.zeros((x.shape[0], self.classes[lvl]), device=x.device)
+                                         for lvl in range(5,self.base_level,-1)]
+        
+        # At base level, make a prediction
+        x = self.fc1(x) # Linear layer
+        output.insert(0, self.softmax(x)) # Softmax
+
+        # Above base level, infer parents
+        for i in range(self.base_level-1,-1,-1):
+            output.insert(0, output[0] @ self.tax_encoder.inference_matrices[i])
+
+        return output    
     
 
 class MultiHead(torch.nn.Module):
@@ -30,21 +80,9 @@ class MultiHead(torch.nn.Module):
         self.softmax = torch.nn.ModuleList(
             [torch.nn.Softmax(dim=1) for i in range(len(classes))]) 
     
-    def forward(self, x):
-        outputs = [self.softmax[i](self.output[i](x)) 
-                   for i in range(len(self.output))]
+    def forward(self, x, levels=range(6)):
+        outputs = [self.softmax[i](self.output[i](x)) for i in levels]
         return outputs
-
-
-class AutoRegressive(MultiHead):
-    ''''Multi-head model for an auto-regressive prediction'''
-
-    def __init__(self, classes):
-        super().__init__(classes)
-
-    def forward(self, x, lvl):
-        '''Makes prediction using output head as specified by level'''
-        return self.softmax[lvl](self.output[lvl](x))
     
     
 class ChainedMultiHead(torch.nn.Module):
@@ -130,71 +168,6 @@ class ChainedMultiHead(torch.nn.Module):
         for i in range(len(self.output)):
             prev = self.softmax[i](self.output[i](torch.concat((x, prev), 1)))
             outputs.append(prev)
-        return outputs
-    
-
-class SumInference(torch.nn.Module):
-    '''Sums softmax probabilities of child classes to infer the probability of 
-    a parent, using inference matrices.'''
-
-    def __init__(self, classes, tax_encoder):
-        super().__init__()
-        self.tax_encoder = tax_encoder
-        self.fc1 = torch.nn.LazyLinear(out_features=classes[-1])
-        self.softmax = torch.nn.Softmax(dim=1) 
-        self.classes = classes
-    
-    def forward(self, x):
-        x = self.fc1(x)
-        output = [self.softmax(x)]
-        for i in range(len(self.classes)-2,-1,-1):
-            output.insert(0, 
-                          output[0] @ self.tax_encoder.inference_matrices[i])
-
-        return output
-    
-    
-class ParentInference(torch.nn.Module):
-    '''Infers parent classes by looking in the inference matrix and seeing what
-    parent a child class is most often part of.'''
-
-    def __init__(self, classes, tax_encoder):
-        super().__init__()
-        self.tax_encoder = tax_encoder
-        self.fc1 = torch.nn.LazyLinear(out_features=classes[-1])
-        self.softmax = torch.nn.Softmax(dim=1) 
-        self.classes = classes
-
-    def forward(self, x):
-        x = self.fc1(x) # Linear layer
-        output = [self.softmax(x)] # Softmax + initialize output list
-        _, pred = torch.max(output[0],1) # Get argmax
-        for i in range(len(self.classes)-2,-1,-1): # From low to high level
-            # Get parent indices by retrieving the argmax of inference matrix
-            _, pred = torch.max(self.tax_encoder.inference_matrices[i][pred], 1)
-            # Mimick probability tensor by one-hot encoding
-            probs = torch.zeros((pred.shape[0], self.classes[i]))
-            probs[torch.arange(pred.shape[0]), pred] = 1
-            output.insert(0, probs.to(x.device))
-        return output
-    
-
-class TokenizedLevels(torch.nn.Module):
-    '''Bases prediction on embeddings of CLS tokens that indicate taxon level'''
-
-    def __init__(self, classes):
-        super().__init__()
-        self.output = torch.nn.ModuleList(
-            [torch.nn.LazyLinear(out_features=classes[i]) 
-             for i in range(len(classes))])
-        self.softmax = torch.nn.ModuleList(
-            [torch.nn.Softmax(dim=1) for i in range(len(classes))])
-        self.classes = classes 
-
-    def forward(self, x):
-        outputs = []
-        for i in range(len(self.output)):
-            outputs.append(self.softmax[i](self.output[i](x[:,i,:])))
         return outputs
     
     

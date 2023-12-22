@@ -132,13 +132,14 @@ class TensorData(torch.utils.data.Dataset):
                 sizes = torch.bincount(filtered, minlength=num_classes) # Count
                 sizes = sizes.to(utils.DEVICE)
                 loss = loss_function(weight=1/sizes, # Take reciprocal
-                                     ignore_index=utils.UNKNOWN_INT)
+                                     ignore_index=utils.UNKNOWN_INT) 
             
             # No weights at level which has a weighted sampler (perfect balance)
             elif lvl == sampler.lvl:
-                loss = loss_function(ignore_index=utils.UNKNOWN_INT)
-                # Initialize equally distributed distribution
-                dist = torch.ones(num_classes)/num_classes
+                dist = sampler.weights
+                loss_weights = 1/dist
+                loss = loss_function(weight=loss_weights/loss_weights.sum(),
+                                     ignore_index=utils.UNKNOWN_INT)
             
             # Calculate effect of weighted sampler on parent levels...
             else: # ... by inferring what the parent distribution will be
@@ -150,7 +151,7 @@ class TensorData(torch.utils.data.Dataset):
                 # ... and extract what class they are on parent level
                 filtered = unknown[unknown != utils.UNKNOWN_INT]
                 add_random = torch.bincount(filtered, minlength=num_classes)
-                add_random = add_random/n_rows_unknown
+                add_random = add_random/add_random.sum()
                 # Check if we even have an unknown class at sampler level
                 if n_rows_unknown == 0:
                     sampler.unknown_frac = 0
@@ -159,8 +160,9 @@ class TensorData(torch.utils.data.Dataset):
                 sizes = (((1-sampler.unknown_frac)*dist) +
                          (sampler.unknown_frac*add_random))
                 sizes = sizes.to(utils.DEVICE)
-                loss = loss_function(weight=1/sizes, # and take reciprocal
-                                     ignore_index=utils.UNKNOWN_INT)
+                loss_weights = 1/sizes # and take reciprocal
+                loss = loss_function(weight=loss_weights/loss_weights.sum(), 
+                                     ignore_index=-utils.UNKNOWN_INT)
 
             loss.weighted = True
             loss.sampler_correction = False if sampler is None else True    
@@ -168,34 +170,45 @@ class TensorData(torch.utils.data.Dataset):
 
         return losses
 
-    def weighted_sampler(self, level='species', unknown_frac=0.5):
-        '''Random sampler ensuring perfect class balance at specified level.
-        Samples from unidentified class an `unknown_frac` fraction of times.'''
+    def weighted_sampler(self, level='species', strength=1.0, unknown_frac=0.0):
+        '''Yields a random sampler that balances out the label distributions.
+
+        Parameters
+        ----------
+        level: str
+            Level at which the data balancing will be applied to.
+        strength: float
+            Amount of balancing to-be-applied. If 0, maintains the original data
+            distribution. If 1, ensures perfect class imbalance. Numbers in 
+            between represent varying degrees of balance. 
+        unknown_frac: float
+            Sample unidentified classes an `unknown_frac` fraction of times.'''
         
         lvl = utils.LEVELS.index(level) # Get index of level
         labels = self.taxonomies[:,lvl] # Get labels at level
-        filtered = labels[labels != utils.UNKNOWN_INT] # Filter out unknowns
-        num_classes = len(self.tax_encoder.lvl_encoders[lvl].classes_)
-        non_zero = len(filtered.unique()) # Number of classes with >=1 sample
+        known = labels != utils.UNKNOWN_INT
+        filtered = labels[known] # Filter out unknowns
+        num_classes = self.tax_encoder.classes[lvl]
 
-        # Calculating weights per class
-        class_weights = ((1-unknown_frac)/
-                (torch.bincount(filtered, minlength=num_classes)*(non_zero)))
+        # Calculating weights per class and per sample
+        weights = 1/torch.bincount(filtered, minlength=num_classes)**strength
+        sample_weights = torch.zeros(len(self.taxonomies))
+        sample_weights[known] = weights[self.taxonomies[known,lvl]]
+        sample_weights = (1-unknown_frac)*sample_weights / sample_weights.sum()
+
         # Ensuring an unknown_frac proportion of unknown samples
         if len(self.taxonomies) != len(filtered): 
-            sample_weights=((unknown_frac/(len(self.taxonomies)-len(filtered)))*
-                                               torch.ones(len(self.taxonomies)))
-        else: # Correction if there are no unknown samples
-            class_weights += (unknown_frac/(1-unknown_frac))*class_weights
-            sample_weights=torch.zeros(len(self.taxonomies)) 
-        # Assigning weights per sample
-        for i, entry in enumerate(self.taxonomies[:,lvl]):
-            if entry != utils.UNKNOWN_INT:
-                sample_weights[i] = class_weights[entry]
+            sample_weights+=((unknown_frac/(len(self.taxonomies)-len(filtered)))
+                            *torch.where(labels == utils.UNKNOWN_INT, 1.0, 0.0))
+        else: # Correction in case there are no unknown samples in the data
+            sample_weights += (unknown_frac/(1-unknown_frac))*sample_weights
+
         # print(sample_weights.sum()) # NOTE uncomment to verify sum(weights)=1
 
         n_samples = min(len(self.taxonomies), utils.MAX_PER_EPOCH)
         sampler = tud.WeightedRandomSampler(sample_weights,n_samples)
         sampler.lvl = lvl
         sampler.unknown_frac = unknown_frac
+        sampler.strength = strength
+        sampler.weights = weights / weights.sum()
         return sampler

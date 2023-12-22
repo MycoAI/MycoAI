@@ -27,7 +27,7 @@ test_data = test_data.encode_dataset(dna_encoder=train_data.dna_encoder,
 arch = ResNet([2,2,2,2]) # = ResNet18
 # This model will have a single output head and make genus-level predictions
 model = DeepITSClassifier(arch, train_data.dna_encoder, train_data.tax_encoder,  
-               target_levels=['genus'], fcn_layers=[128,20,64])
+                          fcn_layers=[128,20,64])
 
 # Train (optionally with weighted loss/sampling) 
 # sampler = train_data.weighted_sampler('genus')
