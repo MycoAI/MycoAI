@@ -53,7 +53,8 @@ class MLMTrainer:
         # PARAMETER INITIALIZATION
         # Data and sampling
         if sampler is None: # Random sampling as default
-            sampler = torch.utils.data.RandomSampler(data)
+            num_samples = min(len(data.taxonomies), utils.MAX_PER_EPOCH)
+            sampler = tud.RandomSampler(data, num_samples=num_samples)
         dataloader = tud.DataLoader(data, batch_size=batch_size,sampler=sampler)
 
         # Loss and optimizer
@@ -98,9 +99,8 @@ class MLMTrainer:
 
                 # Learning:
                 # Apply mask to batch using the probability arguments
-                x, y = MLMTrainer.mask_batch(x, model.vocab_size, 
-                                             p_mlm, p_mask, p_random)
-                x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
+                x, y = MLMTrainer.mask_batch(x.to(utils.DEVICE), 
+                                      model.vocab_size, p_mlm, p_mask, p_random)
                 optimizer.zero_grad()
                 with torch.autocast(device_type=utils.DEVICE.type, dtype=prec,
                                     enabled=utils.MIXED_PRECISION):
@@ -129,6 +129,7 @@ class MLMTrainer:
 
         # WRAPUP
         # Finishing the wandb_run, getting results dataframe
+        wandb_run.unwatch(model)
         wandb_run.finish(quiet=True)
         wandb_api = wandb.Api()
         wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'

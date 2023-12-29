@@ -83,8 +83,7 @@ class BERT(torch.nn.Module):
         '''Given input sequence, predict masked tokens'''
         src_mask = (src != utils.TOKENS['PAD']).unsqueeze(-2) # Mask padding
         src = self.encoder(self.src_pos_embed(src), src_mask)
-        src = self.mlm_layer(src)
-        return torch.softmax(src, dim=-1)
+        return self.mlm_layer(src)
     
     def get_config(self):
         config = {}
