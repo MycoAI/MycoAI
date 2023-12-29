@@ -3,11 +3,9 @@
 import torch
 import wandb
 import numpy as np
-import pandas as pd
 import torch.utils.data as tud
 from tqdm import tqdm
 from mycoai import utils
-from mycoai import plotter
 from mycoai.deep import train
 from mycoai.deep.train import weight_schedules as ws
 from mycoai.deep.train.label_smoothing import LabelSmoothing
@@ -23,9 +21,8 @@ class DeepITSTrainer:
     @staticmethod
     def train(model, train_data, valid_data=None, epochs=100, loss=None,
               batch_size=64, sampler=None, optimizer=None, 
-              metrics=utils.EVAL_METRICS, levels=['species'], 
-              p_teacher_forcing=0, warmup_steps=None, label_smoothing=None,
-              wandb_config={}, wandb_name=None):
+              metrics=utils.EVAL_METRICS, levels=['species'], warmup_steps=None,
+              label_smoothing=None, wandb_config={}, wandb_name=None):
         '''Trains a neural network to classify ITS sequences
   
         Parameters
@@ -61,12 +58,7 @@ class DeepITSTrainer:
             When specified, the lr increases linearly for the first warmup_steps 
             then decreases proportionally to 1/sqrt(step_number). Works only for
             models with d_model attribute (BERT/EncoderDecoder) (default is 0).
-        p_teacher_forcing: float
-            Float between 0 and 1 that indicates the probability of teacher
-            forcing for a batch. Teacher forcing inputs decoder with true 
-            (masked) target labels instead of doing an autoregressive 
-            prediction. Works only for EncoderDecoder model (default is False).
-        label_smoothing: list[int]
+        label_smoothing: list[float]
             How much label smoothing should be added per taxonomic level. Per 
             level, adds a label_smoothing[level] amount of 'noise' to the
             species that are part of the target label at that level. Must sum up
@@ -79,7 +71,8 @@ class DeepITSTrainer:
         # PARAMETER INITIALIZATION
         # Data and sampling
         if sampler is None:
-            sampler = torch.utils.data.RandomSampler(train_data)
+            n_samples = min(len(train_data.taxonomies), utils.MAX_PER_EPOCH)
+            sampler = tud.RandomSampler(train_data, num_samples=n_samples)
         train_dataloader = tud.DataLoader(train_data, batch_size=batch_size, 
                                           sampler=sampler)
         if label_smoothing is None:
@@ -88,8 +81,7 @@ class DeepITSTrainer:
         
         # Loss and optimizer                                  
         if loss is None:
-            loss = [torch.nn.CrossEntropyLoss() 
-                    for i in range(6)]
+            loss = [CrossEntropyLoss() for i in range(6)]
         if warmup_steps is None: # Constant learning rate as default 
             if optimizer is None:
                 optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, 
@@ -106,8 +98,8 @@ class DeepITSTrainer:
                                   optimizer, lambda step: schedule.get_lr(step))
         if type(levels)==list:
             if type(levels[0])==str:
-                weight_schedule = [float(lvl in levels) for lvl in utils.LEVELS]
-            weight_schedule = ws.Constant(weight_schedule)
+                levels = [float(lvl in levels) for lvl in utils.LEVELS]
+            weight_schedule = ws.Constant(levels)
         else:
             weight_schedule = levels
 
@@ -119,7 +111,6 @@ class DeepITSTrainer:
             scaler = train.DummyScaler() # Does nothing 
 
         # Other configurations
-        metrics = {'Loss': loss, **metrics}
         log_columns = DeepITSTrainer.wandb_log_columns(metrics, 
                                                        (valid_data is not None))
         wandb_run = DeepITSTrainer.wandb_init(train_data, valid_data, model, 
@@ -130,42 +121,41 @@ class DeepITSTrainer:
         print("Training classification task...") if utils.VERBOSE > 0 else None
         for epoch in tqdm(range(epochs)):
 
-            if epoch == 1: # Errors for epoch 0 due to torch.nn.Lazy modules
+            if epoch == 1: # Can't watch first epoch due to lazy layers
                 wandb_run.watch(model, log='all')
             model.train()
             w = weight_schedule(epoch).to(utils.DEVICE)
+            running_loss = np.zeros(6)
             
-            for (x,y_i) in train_dataloader:
+            for (x,y_i) in train_dataloader: 
                 # Make a prediction
                 x, y_i = x.to(utils.DEVICE), y_i.to(utils.DEVICE)
                 y = label_smoothing(y_i)
                 optimizer.zero_grad()
-                teacher_forcing = np.random.binomial(1, p_teacher_forcing)
                 with torch.autocast(device_type=utils.DEVICE.type, dtype=prec, 
                                     enabled=utils.MIXED_PRECISION):
-                    if teacher_forcing:
-                        y_pred = model(x, y) # TODO needs adjustment for label smoothing
-                    else:
-                        y_pred = model(x)
+                    y_pred = model(x)
                     losses = torch.cat(
                         [loss[lvl](y_pred[lvl],y[lvl],y_i[:,lvl]).reshape(1) for 
-                         lvl in range(6)]
+                        lvl in range(6)]
                     )
                     mean_loss = mean(losses, w)
+
                 scaler.scale(mean_loss).backward() # Calculate gradients
                 scaler.unscale_(optimizer) # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 scaler.step(optimizer) # Apply optimizer 
                 lr_scheduler.step() # Update learning rate
                 scaler.update()
+                running_loss += x.size(0)*losses.detach().cpu().numpy()
                 
             # Validation results
-            scores = DeepITSTrainer.validate(model, train_data, metrics,
-                                             label_smoothing)
-            scores = np.concatenate([[epoch+1], scores])
             if valid_data is not None:
-                scores = np.concatenate([scores, DeepITSTrainer.validate(
-                                  model, valid_data, metrics, label_smoothing)])
+                scores = DeepITSTrainer.validate(model, valid_data, metrics)
+            else:
+                scores = DeepITSTrainer.validate(model, train_data, metrics)
+            scores = np.concatenate([[epoch+1], running_loss/len(train_data),
+                                     scores])
             wandb_run.log({column: score 
                            for column, score in zip(log_columns, scores)})
 
@@ -173,7 +163,8 @@ class DeepITSTrainer:
         model_parameters = filter(lambda p: p.requires_grad, model.parameters())
         params = sum([np.prod(p.size()) for p in model_parameters])
         wandb_run.config.update({'num_params': params})
-        wandb_run.unwatch(model)
+        if epochs > 1:
+            wandb_run.unwatch(model)
         wandb_api = wandb.Api()
         wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
         model.train_ref = wandb_id
@@ -186,49 +177,41 @@ class DeepITSTrainer:
         if utils.VERBOSE > 0:
             print("Training finished, log saved to wandb (see above).")
             print("Final accuracy scores:\n---------------------")
-            DeepITSTrainer.final_report(history, 'train')
             if valid_data is not None:
                 DeepITSTrainer.final_report(history, 'valid')
+            else:
+                DeepITSTrainer.final_report(history, 'train')
         
         return model, history
     
     @staticmethod
-    def validate(model, data, metrics, label_smoothing, ignore_unknowns=True):
+    def validate(model, data, metrics, ignore_unknowns=True):
         '''Evaluates performance of model for the specified `metrics`.
         
         Parameters
         ----------
         model: DeepITSClassifier
             The to-be-validated neural network
-        data: UniteData
+        data: TensorData
             Test data
         metrics: dict{str:function}
             Evaluation metrics to report during testing
-        label_smoothing: LabelSmoothing
-            Label smoothing applied to the label (for loss validation)
         ignore_unknowns:
             Ignore the unrecognized labels in the dataset (default is True)'''
 
         model.eval()
         with torch.no_grad():
-            y_pred, y_i = model._predict(data, return_labels=True)
-            y = label_smoothing(y_i)
+            y_pred, y = model._predict(data, return_labels=True)
             results = []
             for m in metrics:
                 for lvl in range(6):
-                    y_lvl, y_i_lvl, y_pred_lvl = y[lvl], y_i[:,lvl], y_pred[lvl]
+                    y_lvl, y_pred_lvl = y[:,lvl], y_pred[lvl]
                     if ignore_unknowns:
-                        mask = y_i[:,lvl] != utils.UNKNOWN_INT
+                        mask = y[:,lvl] != utils.UNKNOWN_INT
                         y_lvl = y_lvl[mask]
-                        y_i_lvl = y_i_lvl[mask]
                         y_pred_lvl = y_pred_lvl[mask]
-                    if m == 'Loss':
-                        results.append(
-                             metrics[m][lvl](y_pred_lvl, y_lvl, y_i_lvl).item())
-                    else:
-                        argmax_y_pred = torch.argmax(y_pred_lvl, dim=1)
-                        results.append(metrics[m](y_i_lvl.cpu().numpy(), 
-                                                  argmax_y_pred.cpu().numpy()))
+                    results.append(metrics[m](y_lvl.cpu().numpy(), 
+                                                y_pred_lvl.cpu().numpy()))
         
         cons = DeepITSTrainer.consistency(y_pred, model.tax_encoder)
         return np.array(results + cons)
@@ -241,8 +224,8 @@ class DeepITSTrainer:
         consistencies = []
         n_rows = len(full_prediction[0])
         for i in range(5):
-            this_lvl = torch.argmax(full_prediction[i], dim=1)
-            next_lvl = torch.argmax(full_prediction[i+1], dim=1)
+            this_lvl = full_prediction[i]
+            next_lvl = full_prediction[i+1]
             cons = np.sum([tax_encoder.inference_matrices[i].cpu().numpy()[b,a] 
                            for a,b in zip(this_lvl, next_lvl)]) / n_rows
             consistencies.append(cons)
@@ -250,24 +233,16 @@ class DeepITSTrainer:
         return consistencies
 
     @staticmethod
-    def results_init(metrics):
-        '''Initializes an empty results dataframe with correct rows/columns'''
-        columns += [f'{metric}|{lvl}' for metric in metrics 
-                                                       for lvl in utils.LEVELS]
-        columns += ([f'Consistency|{pair}' 
-                            for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
-        return pd.DataFrame(columns=columns)
-
-    @staticmethod
     def wandb_log_columns(metrics, use_valid, consistency=True):
         '''Returns a list of column names for the wandb log'''
         columns = ['Epoch']
-        for dataset in ['train', 'valid'][:int(use_valid)+1]:
-            columns +=  [f'{metric}|{dataset}|{lvl}' 
-                           for metric in metrics for lvl in utils.LEVELS]
-            if consistency:
-                columns += ([f'Consistency|{dataset}|{pair}' 
-                               for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
+        columns += [f'loss|train|{lvl}' for lvl in utils.LEVELS]
+        dataset = 'valid' if use_valid else 'train'
+        columns +=  [f'{metric}|{dataset}|{lvl}' 
+                        for metric in metrics for lvl in utils.LEVELS]
+        if consistency:
+            columns += ([f'Consistency|{dataset}|{pair}' 
+                            for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
         return columns
 
     @staticmethod
@@ -300,13 +275,14 @@ class DeepITSTrainer:
         '''Visualizes training history in custom charts on WandB'''
         
         history.replace('NaN', np.nan, inplace=True)
+        columns = [f'loss|train|{lvl}' for lvl in utils.LEVELS]
         for metric in metrics:
-            columns = DeepITSTrainer.wandb_log_columns([metric], 
-                                                       use_valid, False)
+            dataset = 'valid' if use_valid else 'train'
+            columns += [f'{metric}|{dataset}|{lvl}' for lvl in utils.LEVELS]
             wandb_run.log({f"{metric} learning curve": wandb.plot.line_series(
               xs=history['Epoch'].values, 
-              ys=history[columns[1:]].values.T,
-              keys=[", ".join(column.split("|")[1:]) for column in columns[1:]],
+              ys=history[columns].values.T,
+              keys=[", ".join(column.split("|")[1:]) for column in columns],
               title=metric,
               xname='Epoch'
             )})

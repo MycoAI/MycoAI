@@ -105,7 +105,7 @@ class DeepITSClassifier(torch.nn.Module):
             x_ = self.base_arch(x, tgt)[:,lvl]
             x_ = self.output(x_, [lvl])
             output += x_
-            pred = 1 + self.tax_encoder.flat_label(torch.argmax(x_,dim=-1), lvl)
+            pred = 1+self.tax_encoder.flat_label(torch.argmax(x_[0],dim=-1),lvl)
             tgt = torch.cat((tgt, pred.unsqueeze(1)), dim=1)
         return output
 
@@ -136,14 +136,11 @@ class DeepITSClassifier(torch.nn.Module):
 
         input_data = self._encode_input_data(input_data)
         predictions = self._predict(input_data)
-        classes = []
-        for i, prediction in enumerate(predictions):
-            pred_argmax = torch.argmax(prediction, dim=1).cpu().numpy()
-            classes.append(pred_argmax)
-        classes = np.stack(classes, axis=1)
-        decoding = self.tax_encoder.decode(classes)
+        predictions = [pred_level.cpu().numpy() for pred_level in predictions]
+        predictions = np.stack(predictions, axis=1)
+        predictions = self.tax_encoder.decode(predictions)
         
-        classification = pd.DataFrame(decoding, columns=utils.LEVELS)
+        classification = pd.DataFrame(predictions, columns=utils.LEVELS)
         classification[self.masked_levels] = utils.UNKNOWN_STR
         return classification
     
@@ -167,10 +164,10 @@ class DeepITSClassifier(torch.nn.Module):
         with torch.no_grad():
             for (x,y) in dataloader:
                 x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
-                prediction = self(x)
+                y_pred = self(x)
                 for i in range(len(self.classes)):
-                    predictions[i].append(prediction[i])
-                labels.append(y)
+                    predictions[i].append(torch.argmax(y_pred[i], dim=1).cpu())
+                labels.append(y.cpu())
             predictions = [torch.cat(level) for level in predictions]
         
         if return_labels:

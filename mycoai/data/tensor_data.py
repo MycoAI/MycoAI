@@ -50,8 +50,8 @@ class TensorData(torch.utils.data.Dataset):
     def import_data(self, import_path):
         '''Imports encoded sequences and taxonomies'''
         content = torch.load(import_path)
-        self.sequences = content['sequences'].to(utils.DEVICE)
-        self.taxonomies = content['taxonomies'].to(utils.DEVICE)
+        self.sequences = content['sequences']
+        self.taxonomies = content['taxonomies']
         self.dna_encoder = content['dna_encoder']
         self.tax_encoder = content['tax_encoder']
         self.name = content['name']
@@ -126,20 +126,16 @@ class TensorData(torch.utils.data.Dataset):
             num_classes = len(self.tax_encoder.lvl_encoders[lvl].classes_)
             
             # Weigh by reciprocal of class size when no sampler in effect
-            if sampler is None or lvl > sampler.lvl:   
+            if sampler is None or lvl >= sampler.lvl:   
                 filtered = (self.taxonomies[:,lvl] # Filter for known entries
                             [self.taxonomies[:,lvl] != utils.UNKNOWN_INT])
                 sizes = torch.bincount(filtered, minlength=num_classes) # Count
-                sizes = sizes.to(utils.DEVICE)
-                loss = loss_function(weight=1/sizes, # Take reciprocal
-                                     ignore_index=utils.UNKNOWN_INT) 
-            
-            # No weights at level which has a weighted sampler (perfect balance)
-            elif lvl == sampler.lvl:
-                dist = sampler.weights
-                loss_weights = 1/dist
-                loss = loss_function(weight=loss_weights/loss_weights.sum(),
-                                     ignore_index=utils.UNKNOWN_INT)
+                # At sampler level, multiply weights*sizes to get distribution
+                if sampler is not None and lvl == sampler.lvl:
+                    dist = sampler.weights*sizes
+                    loss_weights = 1/dist
+                else: # If sampler level not reached, reciprocal class size
+                    loss_weights = 1/sizes
             
             # Calculate effect of weighted sampler on parent levels...
             else: # ... by inferring what the parent distribution will be
@@ -159,10 +155,10 @@ class TensorData(torch.utils.data.Dataset):
                 # Then combine the distribution + 'unknown' samples
                 sizes = (((1-sampler.unknown_frac)*dist) +
                          (sampler.unknown_frac*add_random))
-                sizes = sizes.to(utils.DEVICE)
                 loss_weights = 1/sizes # and take reciprocal
-                loss = loss_function(weight=loss_weights/loss_weights.sum(), 
-                                     ignore_index=-utils.UNKNOWN_INT)
+                
+            loss = loss_function(weight=loss_weights/loss_weights.sum(), 
+                                 ignore_index=utils.UNKNOWN_INT)
 
             loss.weighted = True
             loss.sampler_correction = False if sampler is None else True    
@@ -206,7 +202,7 @@ class TensorData(torch.utils.data.Dataset):
         # print(sample_weights.sum()) # NOTE uncomment to verify sum(weights)=1
 
         n_samples = min(len(self.taxonomies), utils.MAX_PER_EPOCH)
-        sampler = tud.WeightedRandomSampler(sample_weights,n_samples)
+        sampler = tud.WeightedRandomSampler(sample_weights, n_samples)
         sampler.lvl = lvl
         sampler.unknown_frac = unknown_frac
         sampler.strength = strength

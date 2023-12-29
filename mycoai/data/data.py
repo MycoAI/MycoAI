@@ -294,6 +294,8 @@ class Data:
         if not self.labelled():
             raise AttributeError('No data labels have been imported.')
 
+        if not np.isinf(max_classes):
+            data = self.data[self.data[level] != utils.UNKNOWN_STR]
         data = self.data.groupby(level).filter(lambda x: len(x) > min_samples)
         groups = [group for _, group in data.groupby(level)]
         data = pd.concat(random.sample(groups, min(max_classes, len(groups))))

@@ -2,6 +2,7 @@
 types required for MycoAI yet unsupported by default PyTorch.'''
 
 import torch
+from mycoai import utils
 
 class CrossEntropyLoss(torch.nn.Module):
     '''Like torch.nn.CrossEntropyLoss, but expects input as probability 
@@ -15,7 +16,7 @@ class CrossEntropyLoss(torch.nn.Module):
         super().__init__()
         self.ignore_index = ignore_index
         if weight is not None:
-            self.weight = weight
+            self.weight = weight.to(utils.DEVICE)
             self.forward = self._forward_weighted
         else:
             self.forward = self._forward
@@ -27,12 +28,12 @@ class CrossEntropyLoss(torch.nn.Module):
         w = (target_index != self.ignore_index).unsqueeze(1)
         return -torch.sum(w*target * torch.log(input + 1e-10)) / w.sum()
     
-    def _forward_weighted(self, input, target, target_index):
+    def _forward_weighted(self, inputt, target, target_index):
         '''Calculate weighted cross-entropy loss. Input and target must be 
         probabilities. Target_index must be tensor containing class indices.'''
 
         dont_ignore = target_index != self.ignore_index
-        
         w = (self.weight[torch.where(dont_ignore, target_index, 0)]*
              (dont_ignore)).unsqueeze(1)
-        return -torch.sum(w*target * torch.log(input + 1e-10)) / w.sum()
+        
+        return -torch.sum(w*target*torch.log(inputt + 1e-7))/(w.sum() + 1e-7)
