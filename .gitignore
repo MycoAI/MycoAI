@@ -8,3 +8,4 @@ wandb*
 .idea
 saved_models
 *.png
+scripts/experiments*

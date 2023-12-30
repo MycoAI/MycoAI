@@ -41,16 +41,16 @@ class Classify:
                                              help='the classification position to load the classification.')  # optional
 
     def add_deep_args(self):
-        self.deep_parser.add_argument('--load_model', type=str, help='Path to save the model', required=True)
+        self.deep_parser.add_argument('--load_model', type=str, help='Path to model to load', required=True)
 
-        self.deep_parser.add_argument('--fasta_filepath',
-                           help='Path to the FASTA file classify containing ITS sequences.', required=True)
+        self.deep_parser.add_argument('fasta_filepath',
+                           help='Path to the FASTA file containing ITS sequences to classify', required=True)
 
         self.deep_parser.add_argument('--out',
                            default='prediction.csv',
                            type=str,
                            nargs=1,
-                           help='Path to the output CSV file.')
+                           help='Path to the output CSV file to save the classification results.')
         self.deep_parser.add_argument('--gpu', type=int, const=0, nargs='?',
                                       help='Use CUDA enabled GPU if available. The number indicates the GPU to use',
                                       default=None)

@@ -11,6 +11,7 @@ from mycoai import plotter
 from mycoai.deep import train
 from mycoai.deep.train import weight_schedules as ws
 
+
 mean = lambda tensor, weights: (tensor @ weights) / weights.sum()
 
 
@@ -19,9 +20,10 @@ class DeepITSTrainer:
 
     @staticmethod
     def train(model, train_data, valid_data=None, epochs=100, loss=None,
-              batch_size=64, sampler=None, optimizer=None,
-              metrics=utils.EVAL_METRICS, weight_schedule=None,
-              warmup_steps=None, wandb_config={}, wandb_name=None):
+              batch_size=64, sampler=None, optimizer=None, 
+              metrics=utils.EVAL_METRICS, weight_schedule=None, 
+              p_teacher_forcing=0, warmup_steps=None, wandb_config={}, 
+              wandb_name=None):
         '''Trains a neural network to classify ITS sequences
 
         Parameters
@@ -53,7 +55,12 @@ class DeepITSTrainer:
         warmup_steps: int | NoneType
             When specified, the lr increases linearly for the first warmup_steps
             then decreases proportionally to 1/sqrt(step_number). Works only for
-            models with d_model attribute (e.g. BERT) (default is 0).
+            models with d_model attribute (BERT/EncoderDecoder) (default is 0).
+        p_teacher_forcing: float
+            Float between 0 and 1 that indicates the probability of teacher
+            forcing for a batch. Teacher forcing inputs decoder with true 
+            (masked) target labels instead of doing an autoregressive 
+            prediction. Works only for EncoderDecoder model (default is False).
         wandb_config: dict
             Extra information to be added to weights and biases config data.
         wandb_name: str
@@ -70,71 +77,75 @@ class DeepITSTrainer:
         if loss is None:
             loss = [torch.nn.CrossEntropyLoss(ignore_index=utils.UNKNOWN_INT)
                     for i in range(6)]
-        if warmup_steps is None:  # Constant learning rate as default
+        if warmup_steps is None: # Constant learning rate as default
             if optimizer is None:
                 optimizer = torch.optim.Adam(model.parameters(), lr=0.0001,
                                              weight_decay=0.0001)
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
                                                              lambda step: 1)
-        else:  # Initialize lr scheduler if warmup_steps is specified
+        else: # Initialize lr scheduler if warmup_steps is specified
             if optimizer is None:
                 optimizer = torch.optim.Adam(model.parameters(), lr=1,
                                              weight_decay=0.0001)
             # NOTE If you specify an optimizer here, the lr will be weighted
             schedule = train.LrSchedule(model.d_model, warmup_steps)
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-                optimizer, lambda step: schedule.get_lr(step))
+                                  optimizer, lambda step: schedule.get_lr(step))
         if weight_schedule is None:
-            weight_schedule = ws.Constant([1] * len(model.target_levels))
+            weight_schedule = ws.Constant([1]*len(model.target_levels))
 
         # Mixed precision
         prec = torch.float16 if utils.DEVICE.type == 'cuda' else torch.bfloat16
         if utils.MIXED_PRECISION and utils.DEVICE.type == 'cuda':
             scaler = torch.cuda.amp.grad_scaler.GradScaler()
         else:
-            scaler = train.DummyScaler()  # Does nothing
+            scaler = train.DummyScaler() # Does nothing
 
         # Other configurations
         metrics = {'Loss': loss, **metrics}
         log_columns = DeepITSTrainer.wandb_log_columns(model.target_levels,
-                                                       metrics, (valid_data is not None))
+                                              metrics, (valid_data is not None))
         wandb_run = DeepITSTrainer.wandb_init(train_data, valid_data, model,
-                                              optimizer, weight_schedule, sampler, loss, batch_size, epochs,
-                                              warmup_steps, wandb_config, wandb_name)
+            optimizer, weight_schedule, sampler, loss, batch_size, epochs,
+            warmup_steps, wandb_config, wandb_name)
 
         # TRAINING LOOP
         print("Training classification task...") if utils.VERBOSE > 0 else None
         for epoch in tqdm(range(epochs)):
 
-            if epoch == 1:  # Errors for epoch 0 due to torch.nn.Lazy modules
+            if epoch == 1: # Errors for epoch 0 due to torch.nn.Lazy modules
                 wandb_run.watch(model, log='all')
             model.train()
             w = weight_schedule(epoch).to(utils.DEVICE)
 
-            for (x, y) in train_dataloader:
+            for (x,y) in train_dataloader:
                 # Make a prediction
                 x, y = x.to(utils.DEVICE), y.to(utils.DEVICE)
                 optimizer.zero_grad()
+                teacher_forcing = np.random.binomial(1, p_teacher_forcing)
                 with torch.autocast(device_type=utils.DEVICE.type, dtype=prec,
                                     enabled=utils.MIXED_PRECISION):
-                    y_pred = model(x)
+                    if teacher_forcing:
+                        y_pred = model(x, y)
+                    else:
+                        y_pred = model(x)
                     # Learning step
-                    losses = torch.cat([loss[lvl](y_pred[i], y[:, lvl]).reshape(1)
-                                        for i, lvl in enumerate(model.target_levels)])
+                    losses = torch.cat([loss[lvl](y_pred[i],y[:,lvl]).reshape(1)
+                                  for i, lvl in enumerate(model.target_levels)])
                     mean_loss = mean(losses, w)
-                scaler.scale(mean_loss).backward()  # Calculate gradients
-                scaler.unscale_(optimizer)  # Unscale before clipping
+                scaler.scale(mean_loss).backward() # Calculate gradients
+                scaler.unscale_(optimizer) # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-                scaler.step(optimizer)  # Apply optimizer
-                lr_scheduler.step()  # Update learning rate
+                scaler.step(optimizer) # Apply optimizer
+                lr_scheduler.step() # Update learning rate
                 scaler.update()
 
             # Validation results
             scores = DeepITSTrainer.validate(model, train_data, metrics)
-            scores = np.concatenate([[epoch + 1], scores])
+            scores = np.concatenate([[epoch+1], scores])
             if valid_data is not None:
                 scores = np.concatenate([scores,
-                                         DeepITSTrainer.validate(model, valid_data, metrics)])
+                       DeepITSTrainer.validate(model, valid_data, metrics)])
             wandb_run.log({column: score
                            for column, score in zip(log_columns, scores)})
 
@@ -149,16 +160,16 @@ class DeepITSTrainer:
         run = wandb_api.run(wandb_id)
         history = run.history(pandas=True)
         DeepITSTrainer.wandb_learning_curves(wandb_run, history, metrics,
-                                             model.target_levels, valid_data is not None)
+                                    model.target_levels, valid_data is not None)
         wandb_run.finish(quiet=True)
 
         if utils.VERBOSE > 0:
             print("Training finished, log saved to wandb (see above).")
             print("Final accuracy scores:\n---------------------")
-            DeepITSTrainer.final_report(history, model.target_levels, 'train')
+            DeepITSTrainer.final_report(history,model.target_levels,'train')
             if valid_data is not None:
-                DeepITSTrainer.final_report(history, model.target_levels,
-                                            'valid')
+                DeepITSTrainer.final_report(history,model.target_levels,
+                                                'valid')
 
         return model, history
 
@@ -183,17 +194,14 @@ class DeepITSTrainer:
             results = []
             for m in metrics:
                 for i, lvl in enumerate(model.target_levels):
-                    y_lvl, y_pred_i = y[:, lvl], y_pred[i]
+                    y_lvl, y_pred_i = y[:,lvl], y_pred[i]
                     if ignore_unknowns:
-                        mask = y[:, lvl] != utils.UNKNOWN_INT
+                        mask = y[:,lvl] != utils.UNKNOWN_INT
                         y_lvl, y_pred_i = y_lvl[mask], y_pred_i[mask]
                     if m == 'Loss':
                         results.append(metrics[m][lvl](y_pred_i, y_lvl).item())
                     else:
                         argmax_y_pred = torch.argmax(y_pred_i, dim=1)
-                        #print("argmax_y_pred: ", argmax_y_pred.cpu())
-                        #print("y_lvl: ", y_lvl.cpu())
-                        #print(metrics[m])
                         results.append(metrics[m](y_lvl.cpu().numpy(),
                                                   argmax_y_pred.cpu().numpy()))
 
@@ -212,9 +220,9 @@ class DeepITSTrainer:
         n_rows = len(full_prediction[0])
         for i in range(5):
             this_lvl = torch.argmax(full_prediction[i], dim=1)
-            next_lvl = torch.argmax(full_prediction[i + 1], dim=1)
-            cons = np.sum([tax_encoder.inference_matrices[i].cpu().numpy()[b, a]
-                           for a, b in zip(this_lvl, next_lvl)]) / n_rows
+            next_lvl = torch.argmax(full_prediction[i+1], dim=1)
+            cons = np.sum([tax_encoder.inference_matrices[i].cpu().numpy()[b,a]
+                           for a,b in zip(this_lvl, next_lvl)]) / n_rows
             consistencies.append(cons)
 
         return consistencies
@@ -223,22 +231,22 @@ class DeepITSTrainer:
     def results_init(target_levels, metrics):
         '''Initializes an empty results dataframe with correct rows/columns'''
         columns += [f'{metric}|{utils.LEVELS[lvl]}' for metric in metrics
-                    for lvl in target_levels]
+                                                       for lvl in target_levels]
         if len(target_levels) == 6:
             columns += ([f'Consistency|{pair}'
-                         for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
+                               for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
         return pd.DataFrame(columns=columns)
 
     @staticmethod
     def wandb_log_columns(target_levels, metrics, use_valid, consistency=True):
         '''Returns a list of column names for the wandb log'''
         columns = ['Epoch']
-        for dataset in ['train', 'valid'][:int(use_valid) + 1]:
-            columns += [f'{metric}|{dataset}|{utils.LEVELS[lvl]}'
-                        for metric in metrics for lvl in target_levels]
+        for dataset in ['train', 'valid'][:int(use_valid)+1]:
+            columns +=  [f'{metric}|{dataset}|{utils.LEVELS[lvl]}'
+                           for metric in metrics for lvl in target_levels]
             if len(target_levels) == 6 and consistency:
                 columns += ([f'Consistency|{dataset}|{pair}'
-                             for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
+                               for pair in ['P-C', 'C-O', 'O-F', 'F-G', 'G-S']])
         return columns
 
     @staticmethod
@@ -275,11 +283,11 @@ class DeepITSTrainer:
             columns = DeepITSTrainer.wandb_log_columns(target_levels, [metric],
                                                        use_valid, False)
             wandb_run.log({f"{metric} learning curve": wandb.plot.line_series(
-                xs=history['Epoch'].values,
-                ys=history[columns[1:]].values.T,
-                keys=[", ".join(column.split("|")[1:]) for column in columns[1:]],
-                title=metric,
-                xname='Epoch'
+              xs=history['Epoch'].values,
+              ys=history[columns[1:]].values.T,
+              keys=[", ".join(column.split("|")[1:]) for column in columns[1:]],
+              title=metric,
+              xname='Epoch'
             )})
 
     @staticmethod

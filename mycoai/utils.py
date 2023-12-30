@@ -27,10 +27,10 @@ EVAL_METRICS = {
     'Accuracy': skmetric.accuracy_score,
     'Accuracy (balanced)': skmetric.balanced_accuracy_score,
     'Precision': partial(
-        skmetric.precision_score, average='macro', zero_division="warn"),
+        skmetric.precision_score, average='macro', zero_division=np.nan),
     'Recall': partial(
-        skmetric.recall_score, average='macro', zero_division="warn"),
-    'F1': partial(skmetric.f1_score, average='macro', zero_division="warn"),
+        skmetric.recall_score, average='macro', zero_division=np.nan),
+    'F1': partial(skmetric.f1_score, average='macro', zero_division=np.nan),
     'MCC': skmetric.matthews_corrcoef
 }
 
@@ -116,3 +116,20 @@ def get_general_config():
             'mixed_precision':  MIXED_PRECISION,
             'git_commit':       repo.head.object.hexsha,
             'max_per_epoch':    MAX_PER_EPOCH}
+
+class Generator(torch.nn.Module):
+    '''Linear transformation + softmax'''
+
+    def __init__(self, in_features, out_features, activation='softmax'):
+        super().__init__()
+        if in_features is None:
+            self.linear = torch.nn.LazyLinear(out_features=out_features)
+        else:
+            self.linear = torch.nn.Linear(in_features, out_features)
+        if activation == 'softmax':
+            self.activation = torch.nn.Softmax(dim=1)
+        elif activation == 'tanh':
+            self.activation = torch.nn.Tanh()
+
+    def forward(self, x):
+        return self.activation(self.linear(x))

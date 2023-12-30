@@ -2,6 +2,7 @@
 tensors (one for each level).'''
 
 import torch
+from mycoai import utils
 
 class SingleHead(torch.nn.Module):
     '''Predicting a single taxon level.'''
@@ -16,6 +17,7 @@ class SingleHead(torch.nn.Module):
         x = self.fc1(x)
         output = self.softmax(x)
         return [output]
+    
 
 class MultiHead(torch.nn.Module):
     '''Predicting multiple taxon levels using different heads.'''
@@ -32,6 +34,18 @@ class MultiHead(torch.nn.Module):
         outputs = [self.softmax[i](self.output[i](x)) 
                    for i in range(len(self.output))]
         return outputs
+
+
+class AutoRegressive(MultiHead):
+    ''''Multi-head model for an auto-regressive prediction'''
+
+    def __init__(self, classes):
+        super().__init__(classes)
+
+    def forward(self, x, lvl):
+        '''Makes prediction using output head as specified by level'''
+        return self.softmax[lvl](self.output[lvl](x))
+    
     
 class ChainedMultiHead(torch.nn.Module):
     '''Like MultiHead, but each taxon level also gets input from parent lvl.'''
@@ -85,7 +99,7 @@ class ChainedMultiHead(torch.nn.Module):
     def _forward(self, x):
         outputs = []
         prev = (self.output[0](x))
-        outputs.append(self.softmax[i](prev))
+        outputs.append(self.softmax[0](prev))
         for i in range(1, len(self.output)):
             prev = self.output[i](prev)
             outputs.append(self.softmax[i](prev))
@@ -93,7 +107,7 @@ class ChainedMultiHead(torch.nn.Module):
     
     def _forward_use_prob(self, x):
         outputs = []
-        prev = self.softmax[i](self.output[0](x))
+        prev = self.softmax[0](self.output[0](x))
         outputs.append(prev)
         for i in range(1, len(self.output)):
             prev = self.softmax[i](self.output[i](prev))
@@ -117,6 +131,7 @@ class ChainedMultiHead(torch.nn.Module):
             prev = self.softmax[i](self.output[i](torch.concat((x, prev), 1)))
             outputs.append(prev)
         return outputs
+    
 
 class SumInference(torch.nn.Module):
     '''Sums softmax probabilities of child classes to infer the probability of 
@@ -137,6 +152,7 @@ class SumInference(torch.nn.Module):
                           output[0] @ self.tax_encoder.inference_matrices[i])
 
         return output
+    
     
 class ParentInference(torch.nn.Module):
     '''Infers parent classes by looking in the inference matrix and seeing what
@@ -161,6 +177,7 @@ class ParentInference(torch.nn.Module):
             probs[torch.arange(pred.shape[0]), pred] = 1
             output.insert(0, probs.to(x.device))
         return output
+    
 
 class TokenizedLevels(torch.nn.Module):
     '''Bases prediction on embeddings of CLS tokens that indicate taxon level'''
@@ -179,3 +196,61 @@ class TokenizedLevels(torch.nn.Module):
         for i in range(len(self.output)):
             outputs.append(self.softmax[i](self.output[i](x[:,i,:])))
         return outputs
+    
+    
+class SoftmaxTreeNode(torch.nn.Module):
+    ''''Node of a hierarchical softmax tree.'''
+
+    def __init__(self, parent, childs, root, lvl):
+        super().__init__()      
+        
+        # Finding subtrees
+        if lvl < 5: # Species-level:
+            subtrees = [SoftmaxTreeNode(child, root.find_children(child,lvl),
+                        root, lvl+1) for child in childs]
+            root.subtrees[lvl].append(torch.nn.ModuleList(subtrees)) 
+        
+        # Setting attributes
+        self.generator = utils.Generator(root.input_dim, len(childs))
+        self.parent = parent # Save class indices 
+        self.child_encodings = childs # (= TaxonEncoder encodings)
+
+    def forward(self, x): 
+        return self.generator(x)
+    
+
+class SoftmaxTree(SoftmaxTreeNode):
+    '''Root node of a hierarchical softmax tree. Output per class is the
+    conditional probability given the parent, multiplied by the probability of
+    the parent.'''
+
+    def __init__(self, classes, tax_encoder, input_dim):
+        self.tax_encoder = tax_encoder
+        self.classes = classes
+        self.input_dim = input_dim
+        self.subtrees = [[] for i in range(5)]
+        # Root is special instance of SoftmaxTreeNode
+        super().__init__(None, torch.arange(classes[0]), self, 0)
+        # Convert subtrees to module lists
+        for i in range(5):
+            self.subtrees[i] = torch.nn.ModuleList(self.subtrees[i])
+        self.subtrees = torch.nn.ModuleList(self.subtrees)
+
+    def find_children(self, parent, lvl):
+        inference_matrix = self.tax_encoder.inference_matrices[lvl]
+        max_probs = torch.argmax(inference_matrix, dim=1)
+        adj_matrix = torch.zeros(inference_matrix.shape)
+        adj_matrix[torch.arange(inference_matrix.shape[0]), max_probs] = 1
+        return torch.nonzero(adj_matrix[:,parent]).squeeze(1)
+
+    def forward(self, x):
+        full_output = [self.generator(x)]
+        for lvl in range(1,6):
+            output = torch.zeros(x.shape[0], self.classes[lvl], 
+                                 device=utils.DEVICE)
+            for parent in self.subtrees[lvl-1]:
+                for subtree in parent:
+                    prob = full_output[lvl-1][:,subtree.parent].view(-1,1)
+                    output[:,subtree.child_encodings] = prob * subtree(x)  
+            full_output.append(output)
+        return full_output

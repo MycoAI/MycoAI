@@ -3,7 +3,7 @@ may not be up-to-date with the latest changes in the code. [Last update:
 8-11-2023]*
 
 # About MycoAI
-Python package for classification of fungal metabarcoding sequences. MycoAI 
+Python package for classification of fungal ITS metabarcoding sequences. MycoAI 
 introduces a collection of deep neural classifiers and allows users to train
 their own. 
 <!-- FUTURE Traditional methods, such as BLAST (+ DNABarcoder) and RDPClassifier
@@ -36,10 +36,10 @@ environment with all the necessary dependencies using the command below.
 
 # Usage
 The MycoAI package was designed for two main usage scenarios:
-1. [**Running pre-written scripts**](#running-scripts): If you have a simple 
+1. [**Running pre-written scripts**](##running-pre-written-scripts): In case you 
 goal (e.g. dataset classification or model training), you can use one of the 
 scripts provided within the [scripts](/scripts) folder.  
-2. [**Custom-made code**](#overview): In case you want to experiment with the 
+2. [**Writing own scripts**](##writing-own-scripts): In case you want to use the
 (many) available options within the MycoAI package (or expand upon them), you 
 can use the package to write your own scripts or modify existing scripts to your
 demands. 
@@ -48,29 +48,58 @@ Whatever approach you follow, you can use MycoAI for the classification of your
 ITS datasets, training different types of models, and/or comparing their 
 performances. 
 
-## Running scripts
-Scripts are available within the [scripts](/scripts) folder. Scripts can be run 
+## Running pre-written scripts
+You can use pre-written scripts to train and classify ITS sequences using AI and non-AI (dnabarcoder) methods
+Scripts are available within the [scripts](./scripts) folder. Scripts can be run 
 through the following prompt:
 
-    python -m scripts.<script_name> <method> --out <path to output>  --fasta_filepath <path to fasta file>
+    python -m its_classifier <subcommand> <subcommand args>
 
-`method` is the name of the method to use for classification. Currently, the available methods are: `deep_its` and `blast`.
+Two subcommands are available: 
+* `train_deep`: trains a deep neural network for ITS classification.
+* `classify_deep`: classifies ITS sequences using a trained model.
 
-The main script, [`classify.py`](/scripts/classify.py) can be used for the
-assignment of taxonomic labels to ITS sequences within a FASTA file. The output
-will be saved in a 'prediction.csv' file. 
-The script takes the following arguments:
+### Training
+To train a deep neural network for ITS classification, run:
+
+    python -m  its_classifier train_deep <subcommand args> <path to the FASTA file containing ITS sequences for training>
+The arguments for `train_deep` subcommand are as follows:
+
+| Argument             | Required | Description                                                                                                                                                                                                                                                                      | Values                                                       | 
+|----------------------|----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------|
+| `--save_model`       | No       | Path to where the trained model should be saved. (default is model.pt)                                                                                                                                                                                                           | `path`                                                       | 
+| `--base_arch_type`   | No       | Type of the to-be-trained base architecture (default is BERT).                                                                                                                                                                                                                   | ['ResNet', 'BERT', 'CNN']                                    |
+| `--validation_split` | No       | Fraction of data to be used for validation (default is 0.2).                                                                                                                                                                                                                     | `float`                                                      | 
+| `--target_levels`    | No       | A list of yaxonomic levels to predict. (default is all levels).                                                                                                                                                                                                                  | `['phylum', 'class', 'order', 'family', 'genus', 'species']` | 
+| `--metrics`          | No       | Evaluation metrics to report during training, provided as dictionary with metric name as key and function as value, forexample {'Accuracy': skmetric.accuracy_score, 'MCC': skmetric.matthews_corrcoef} (default is accuracy, balanced acuracy, precision, recall, f1, and mcc). | `dict`                                                       | 
+| `--wandb_config`     | No       | Allows the user to add extra information to the weights and biases config data (default is {}).                                                                                                                                                                                  | [0,1]                                                        |
+| `--wandb_name`       | No       | Name of the run to be displayed on weights and biases. Will choose a random name if unspecified (default is None).                                                                                                                                                               | [0,1]                                                        |
+| `--gpu`              | No       | Use CUDA enabled GPU if available (default is None). The number following the argument indicates the GPU to use in a multi-GPU system.                                                                                                                                           | `int`                                                        |
+
+The values for the hyperparameters are in [hyperparameters.ini](./scripts/hyperparameters.ini). Edit the file to change the default values.
+
+### Classification
+To classify ITS sequences using a trained model, run:
+
+    python -m  its_classifier classify_deep <subcommand args> <path to theFASTA file containing ITS sequences for classification>
+The arguments for `classify_deep` subcommand are as follows:
+
+| Argument       | Required | Description                                                                                                                            | Values | 
+|----------------|----------|----------------------------------------------------------------------------------------------------------------------------------------|--------|
+| `--load_model` | Yes      | Path to model to load.                                                                                                                 | `path` |
+| `--out`        | No       | Path to the output CSV file to save the classification results (default is predictions.csv).                                           | `path` |
+| `--gpu`        | No       | Use CUDA enabled GPU if available (default is None). The number following the argument indicates the GPU to use in a multi-GPU system. | `int`  | 
+
+### Evaluation script
+To evaluate the quality of a classification (provided as .csv file) predicted by
+a (deep/non-deep) ITS classifier, run:
+
+    python -m evaluate <Path to .csv file containing predicted labels> <Path to .csv or FASTA file containing ground truth labels>
 
 
-
-To find out more about the available arguments, run the script as:
-    
-        python -m scripts.<script_name> <method> --help
-
-Running the scripts within the [paper](/scripts/paper/) folder follow the exact
-experimental setup as used in the report, and allow to reproduce the results.
-
-## Overview
+## Writing own scripts
+The MycoAI package can be used to write your own scripts for training and classifying ITS sequences using depp AI models.
+### Overview
 To train/evaluate a model on a dataset, these are the steps that you can follow
 when writing your own scripts.
 1. [Importing the data](#importing-the-data)
@@ -84,21 +113,17 @@ when writing your own scripts.
     - [Traditional](#traditional-its-classifiers) classifier
 5. [Performance evaluation](#performance-evaluation)
 
-## Importing the data
+### Importing the data
 Users can load a FASTA file into a `mycoai.data.Data` object, which 
 comes with several data filtering methods and can encode the data into a format 
 that is suitable for the desired classifier. By default, it is assumed that the 
 FASTA headers contain labels following the [UNITE](https://unite.ut.ee/) format,
-<<<<<<< HEAD
 but the `DataPrep` object also allows for: 
 1) unlabelled FASTA sequence files or 
-2) custom header parsers functions written by the user. 
-=======
+2) custom header parsers functions written by the user.
 but the `Data` object also allows for custom header parsers functions written by
-the user. 
->>>>>>> master
 
-#### Example
+##### Example
 Assume we have two files: 
 - `dataset1.fasta`: following the same taxonomic label notation as used in 
 UNITE: \
@@ -126,7 +151,7 @@ own_data = mycoai.data.Data('dataset2.fasta', tax_parser=custom_parser)
 Note that the `Data` object assumes that `tax_parser` returns a list of the 
 following format: [id, phylum, class, order, family, genus, species].
 
-## Applying data filters
+### Applying data filters
 The `Data` class contains the following filter methods:
 1. `class_filter`: Used to manipulate the size of taxonomic classes, designed
 for creating a smaller-sized data subset. It will retains at most `max_samples`
@@ -156,13 +181,13 @@ data = data.sequence_quality_filter(tolerance=0.05)
 data = data.sequence_length_filter(tolerance=4)
 ```
 
-## Data encoding
+### Data encoding
 Each classifier requires its own input format. A `mycoai.Data` object has
 the following methods for converting its data into the right encoding:
 * `encode_dataset`: for deep-learning-based classifiers.
 * More will be added soon.
 
-### Data encoding for deep neural classifiers
+#### Data encoding for deep neural classifiers
 A neural network operates on numbers, which is why the input data must be
 converted from an alphabetical sequence (mostly consisting of [A,C,T,G]) into a
 numerical sequence. The same applies to the taxonomic classes: internally, the 
@@ -181,7 +206,7 @@ assign a random fraction of the data for validation. Furthermore, it has an
 datasets can then later be loaded using the `filepath` argument of the 
 `mycoai.data.TensorData` constructor. 
 
-### DNA encoding methods
+#### DNA encoding methods
 | Name              | Description                                                                                                                                                                                              | Tensor shape* | Example encoding: ACGACGT                                                   |
 |-------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|-----------------------------------------------------------------------------|
 | `FourDimDNA`      | 4-channel representation, comparable to the 3-channel RGB representation of images.                                                                                                                      | $[n,4,l]$     | `[[[1,0,0,0],[0,1,0,0],[0,0,1,0],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]]` |
@@ -218,7 +243,7 @@ train_data = mycoai.data.TensorData('tr.pt')
 val_data = mycoai.data.TensorData('val.pt')
 ```
 
-## Deep-learning-based ITS classifiers
+### Deep-learning-based ITS classifiers
 The `mycoai.deep.models.DeepITSClassifier` class uses deep neural networks for 
 its predictions. MycoAI offers various options for the user to 
 [configure](#model-configuration) and [train](#training) his/her own neural ITS 
@@ -226,7 +251,7 @@ classifier. Any `torch.nn.Module` object can be used as a basis for such a
 classifier. The package also includes [pre-training](#pre-training) options for 
 BERT-like architectures.  
 
-### Model configuration
+#### Model configuration
 The `mycoai.deep.models.DeepITSClassifier` class can be configured in multiple 
 ways, its arguments are listed below. The most important elements of a Deep ITS 
 classifier are its data [encoding](#data-encoding-for-deep-neural-classifiers) 
@@ -241,6 +266,7 @@ methods, and its base architecture.
 | `output`        | The type of output head(s) for the neural network                              | One of ['single', 'multi', 'chained', 'inference']                                             |
 | `target_levels` | Names of the taxon levels for the prediction tasks                             | `list[str]` with one or more of ['phylum', 'class', 'order', 'family', 'genus', 'species']     |
 | `dropout`       | Dropout percentage for the dropout layer                                       | `float` in [0,1]                                                                               |
+
 
 Any `torch.nn.Module` object can be used as a base architecture, which allows
 the user to configure his/her own model type as an ITS classifier. The package
@@ -268,12 +294,14 @@ corresponding to a taxonomic level is not only inputted with the output from the
 base architecture, but *also* with the output from the head corresponding to its 
 parent taxon level. For example, the class-level output head gets phylum-level 
 predictions as extra input, i.e. they are chained. 
-* `ClassInference` 'inference': A single standard classification output head, 
+* `SumInference` 'infer_sum': A single standard classification output head, 
 but the higher taxon levels are inferred from the data. The inference is done
 by multiplying the output with inference matrices that describe how often in the 
 training data a certain lower-level taxon belonged to a certain higher-level 
 taxon. These inference matrices are part of the `TaxonEncoder` class and 
 calculated during data encoding. 
+* `ParentInference` 'infer_parent': Infers parent classes by looking in the 
+inference matrix and seeing what parent a child class is most often part of.
 
 #### Example
 ```python
@@ -360,36 +388,37 @@ plotter.classification_loss(history, model.target_levels)
 result = DeepITSTrainer.test(model, test_data)
 ```
 
-## Traditional ITS classifiers
+### Traditional ITS classifiers
 Soon, alternative methods like BLAST (+DNABarcoder) and RDP classifier will be included in MycoAI. 
 
-### Example
+#### Example
 ```python
 #TODO
 ```
 
-## Performance evaluation
+### Performance evaluation
 
-### Example
+#### Example
 ```python
 #TODO
 ```
 
 ## Technical aspects
 
-### Utils
+## Utils
 
-### Example
+## Example
 
 <!-- ### Deep learning details? -->
 
 <!-- FUTURE # Contributing -->
 
-# License
+## License
 Distributed under the MIT License. See [LICENSE](/LICENSE) for more information.
 
 ## Credits
 This package was created with [Cookiecutter](https://github.com/audreyr/cookiecutter) and the [NLeSC/python-template](https://github.com/NLeSC/python-template).
 
-# Contact
+## Contact
 Luuk Romeijn [[e-mail](mailto:l.romeijn@umail.leidenuniv.nl)]
+Nauman Ahmed [[e-mail](mailto:n.ahmed@esciencecenter.nl)]

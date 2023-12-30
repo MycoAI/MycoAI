@@ -18,40 +18,27 @@ class Constant:
                 'weights': self.weights}
 
 class Curriculum:
-    '''Gradually increases task difficulty/specifity.
+    '''(De)activates taxon levels based on threshold
     
     Parameters
     ----------
     thresholds: list[float]
-        List of length 6, specifying training progress fraction at which the 
-        corresponding taxon level is added (first entry is always 0).
+        List of length 6, specifying training epoch at which the corresponding 
+        taxon level is activated.
     low: float
         Weight for taxon levels not within current curriculum (default is 0.0)
     high: float
-        Weight for taxon levels within current curriculum (default is 1.0)
-    maintain: bool
-        If True, keep weights for higher levels than current (default is False)
-    '''
+        Weight for taxon levels within current curriculum (default is 1.0)'''
 
-    def __init__(self, thresholds, n_epochs, low=0.0, high=1.0, maintain=False):
+    def __init__(self, thresholds, low=0.0, high=1.0):
         self.thresholds = thresholds
-        self.n_epochs = n_epochs
         self.low = low 
-        self.high = high 
-        self.maintain = maintain
+        self.high = high
         self.i = 0
 
     def __call__(self, epoch):
-        for lvl in range(len(self.thresholds)):
-            if epoch/self.n_epochs > self.thresholds[lvl]:
-                self.i = lvl
-        if self.maintain:
-            weights = ([self.high]*(1+self.i) + 
-                       [self.low]*(len(self.thresholds)-self.i-1))
-        else:
-            weights = ([self.low]*self.i + [self.high] + 
-                       [self.low]*(len(self.thresholds)-1-self.i))
-        return torch.tensor(weights, dtype=torch.float32)
+        return torch.tensor([{False: self.low, True: self.high}[epoch >= t] 
+            for t in self.thresholds], dtype=torch.float32)
 
     def get_config(self):
         return {'type':       utils.get_type(self),
