@@ -1,0 +1,3 @@
+[submodule "dnabarcoder"]
+	path = dnabarcoder
+	url = https://github.com/vuthuyduong/dnabarcoder.git
