@@ -44,7 +44,7 @@ class Classify:
         self.deep_parser.add_argument('--load_model', type=str, help='Path to model to load', required=True)
 
         self.deep_parser.add_argument('fasta_filepath',
-                           help='Path to the FASTA file containing ITS sequences to classify', required=True)
+                           help='Path to the FASTA file containing ITS sequences to classify')
 
         self.deep_parser.add_argument('--out',
                            default='prediction.csv',

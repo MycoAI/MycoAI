@@ -98,7 +98,7 @@ class Train:
     def add_deep_args(self):
         self.deep_parser.add_argument('--base_arch_type', type=str, choices=['ResNet', 'BERT', 'CNN'], help='Type of the to-be-trained base architecture', default='cnn')
         self.deep_parser.add_argument('--save_model', type=str, help='Path to where the trained model should be saved', default='model.pt')
-        self.deep_parser.add_argument('train_data', type=str, help='Path to the FASTA file containing ITS sequences for training.', required=True)
+        self.deep_parser.add_argument('train_data', type=str, help='Path to the FASTA file containing ITS sequences for training.')
         self.deep_parser.add_argument('--validation_split', type=float,
                             help='Fraction of training data to use for validation. Default is 0.2', default=0.2)
         self.deep_parser.add_argument('--target_levels', type=list,
@@ -122,7 +122,8 @@ class Train:
         # Cuda setup
         if args.gpu is not None:
             utils.set_device('cuda:' + str(args.cuda))  # To specify GPU use
-
+        else:
+            utils.set_device('cpu4')
         if args.base_arch_type == 'CNN':
             hyperparameters.fcn_layers= []
             hyperparameters.output_heads = 'multi'

@@ -396,13 +396,12 @@ Soon, alternative methods like BLAST (+DNABarcoder) and RDP classifier will be i
 #TODO
 ```
 
-### Performance evaluation
+## Performance evaluation
 
-#### Example
+### Example
 ```python
 #TODO
 ```
-
 ## Technical aspects
 
 ## Utils
