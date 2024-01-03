@@ -115,7 +115,7 @@ class TensorData(torch.utils.data.Dataset):
                 output.append(bins.median().item())
         return output
         
-    def weighted_loss(self, loss_function, sampler=None):
+    def weighted_loss(self, loss_function, sampler=None, strength=1):
         '''Returns list of weighted loss (weighted by reciprocal of class size).
         If sampler is provided, will correct for the expected data distribution
         (on all taxonomic levels) given the specified sampler.'''
@@ -132,10 +132,10 @@ class TensorData(torch.utils.data.Dataset):
                 sizes = torch.bincount(filtered, minlength=num_classes) # Count
                 # At sampler level, multiply weights*sizes to get distribution
                 if sampler is not None and lvl == sampler.lvl:
-                    dist = sampler.weights*sizes
-                    loss_weights = 1/dist
+                    dist = sampler.class_weights*sizes
+                    loss_weights = None # No weighted loss at sampler level
                 else: # If sampler level not reached, reciprocal class size
-                    loss_weights = 1/sizes
+                    loss_weights = 1/(sizes**strength)
             
             # Calculate effect of weighted sampler on parent levels...
             else: # ... by inferring what the parent distribution will be
@@ -155,12 +155,14 @@ class TensorData(torch.utils.data.Dataset):
                 # Then combine the distribution + 'unknown' samples
                 sizes = (((1-sampler.unknown_frac)*dist) +
                          (sampler.unknown_frac*add_random))
-                loss_weights = 1/sizes # and take reciprocal
+                loss_weights = 1/(sizes**strength) # and take reciprocal
                 
-            loss = loss_function(weight=loss_weights/loss_weights.sum(), 
-                                 ignore_index=utils.UNKNOWN_INT)
+            if loss_weights is not None:
+                loss_weights = loss_weights/loss_weights.sum()
+            loss = loss_function(weight=loss_weights, 
+                                ignore_index=utils.UNKNOWN_INT)
 
-            loss.weighted = True
+            loss.weighted = strength
             loss.sampler_correction = False if sampler is None else True    
             losses.insert(0, loss)
 
@@ -206,5 +208,5 @@ class TensorData(torch.utils.data.Dataset):
         sampler.lvl = lvl
         sampler.unknown_frac = unknown_frac
         sampler.strength = strength
-        sampler.weights = weights / weights.sum()
+        sampler.class_weights = weights / weights.sum()
         return sampler

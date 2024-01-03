@@ -285,7 +285,7 @@ class Data:
         print('average:', np.round(np.average(klds),2))
 
     def class_filter(self, level, min_samples=0, max_samples=np.inf, 
-                     max_classes=np.inf):
+                     max_classes=np.inf, remove_unidentified=False):
         '''Retains at most max_samples sequences at specified taxon level
         for which at least min_samples are available in that class.
         Ensures perfect class balance when min_samples == max_samples.
@@ -294,9 +294,9 @@ class Data:
         if not self.labelled():
             raise AttributeError('No data labels have been imported.')
 
-        if not np.isinf(max_classes):
+        if remove_unidentified:
             data = self.data[self.data[level] != utils.UNKNOWN_STR]
-        data = self.data.groupby(level).filter(lambda x: len(x) > min_samples)
+        data = data.groupby(level).filter(lambda x: len(x) > min_samples)
         groups = [group for _, group in data.groupby(level)]
         data = pd.concat(random.sample(groups, min(max_classes, len(groups))))
         # Randomly select out of the max_samples
@@ -307,6 +307,14 @@ class Data:
             print(len(data), "sequences retained after class count filter")
 
         self.data = data
+        return self
+
+    def remove_level_filter(self, level, mask='Dummy'):
+        '''Removes all labels (set to unidentified) at specified level(s)'''
+        if type(level) == str:
+            level = [level]
+        for lvl in level:
+            self.data[lvl] = mask
         return self
 
     def sequence_quality_filter(self, tolerance=0.05):
@@ -349,6 +357,15 @@ class Data:
             if lvl not in self.data.columns:
                 return False
         return True
+
+    def labels_report(self):
+        '''Prints the number of classes to predict on each level.'''
+        print("No. of to-be-predicted classes:")
+        num_classes = self.num_classes_per_level()
+        table = pd.DataFrame([['Classes (#)'] + num_classes], 
+                             columns=[''] + utils.LEVELS)
+        table = table.set_index([''])
+        print(table)
 
     def unknown_labels_report(self):
         '''Prints the number of unrecognized target labels on each level.'''

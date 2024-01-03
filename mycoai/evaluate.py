@@ -183,7 +183,8 @@ class Evaluator:
         fig.write_html('temp.html', auto_play=False)
         table = wandb.Table(columns=['plotly_figure'])
         table.add_data(wandb.Html('temp.html'))
-        self.wandb_run.log({f'Report/{metric}_per_trainfreq': table}, step=0)
+        self.wandb_run.log({f'Report/{metric}_per_trainfreq_{level}': table}, 
+                           step=0)
         utils.remove_file('temp.html')
 
     def mispredictions_per_class(self, level, data):

@@ -58,11 +58,12 @@ class FourDimDNA(DNAEncoder):
 class BytePairEncoder(DNAEncoder):
     '''Tokenizer based on appearance frequency of base combinations'''
 
-    def __init__(self, data, length=256, vocab_size=768):
+    def __init__(self, data, length=256, vocab_size=768, n_max=500000):
         if utils.VERBOSE > 0:
             print('Initializing Byte Pair Encoder...')
         mem_stream = io.BytesIO() # In-memory byte stream to save model to
-        sequences = iter(data.data['sequence'].tolist()) # Sentence iterator
+        sequences = data.data.sample(n=min(n_max,len(data.data)),replace=False)
+        sequences = iter(sequences['sequence'].tolist()) # Sentence iterator
         spm.SentencePieceTrainer.train(sentence_iterator=sequences, 
                                        vocab_size=vocab_size,
                                        model_type='bpe',
