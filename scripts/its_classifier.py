@@ -21,24 +21,27 @@ if __name__ == '__main__':
 
     subparsers = parser.add_subparsers(dest='command')
 
-    # Subparser for the "blast" command
-    train_blast_parser = subparsers.add_parser('train_blast')
+    # Subparser for the dnabarcoder predict comman
+    train_dnabarcoder_parser = subparsers.add_parser('dnabarcoder_train')
+
+
+
 
     # Subparser for the "deep_its" command
-    train_deep_parser = subparsers.add_parser('train_deep')
+    train_deep_parser = subparsers.add_parser('deep_train')
 
     # Subparser for the "its" command
-    classify_blast_parser = subparsers.add_parser('classify_blast')
+    classify_dnabarcoder_parser = subparsers.add_parser('dnabarcoder_classify')
 
 
     # Subparser for the "its" command
-    classify_deep_parser = subparsers.add_parser('classify_deep')
+    classify_deep_parser = subparsers.add_parser('deep_classify')
 
 
-    trainer = Train(train_blast_parser, train_deep_parser)
-    trainer.add_blast_args()
+    trainer = Train(train_dnabarcoder_parser, train_deep_parser)
+    trainer.add_dnabarcoder_args()
     trainer.add_deep_args()
-    classifier = Classify(classify_blast_parser, classify_deep_parser)
+    classifier = Classify(classify_dnabarcoder_parser, classify_deep_parser)
     classifier.add_blast_args()
     classifier.add_deep_args()
 

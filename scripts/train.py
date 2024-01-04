@@ -71,11 +71,11 @@ class TrainConfig:
 
 class Train:
 
-    def __init__(self, blast_parser, deep_parser):
-        self.blast_parser = blast_parser
+    def __init__(self, dnabarcoder_parser, deep_parser):
+        self.dnabarcoder_parser = dnabarcoder_parser
         self.deep_parser = deep_parser
 
-    def add_blast_args(self):
+    def add_dnabarcoder_args(self):
         self.blast_parser.add_argument('--fasta_filepath',
                                 help='Path to the FASTA file containing ITS sequences.')
 
@@ -123,7 +123,7 @@ class Train:
         if args.gpu is not None:
             utils.set_device('cuda:' + str(args.cuda))  # To specify GPU use
         else:
-            utils.set_device('cpu4')
+            utils.set_device('cpu')
         if args.base_arch_type == 'CNN':
             hyperparameters.fcn_layers= []
             hyperparameters.output_heads = 'multi'
