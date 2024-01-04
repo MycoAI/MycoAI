@@ -22,10 +22,12 @@ def train(fasta_filepath, save_model, base_arch_type, epochs, batch_size,
     # Reading/encoding the data
     data = Data(fasta_filepath)
     if valid_split > 0:
-        train_data, valid_data = data.encode_dataset(dna_encoder, 
-                                                     valid_split=valid_split)
+        train_data, valid_data = data.train_valid_split(valid_split)
+        train_data = train_data.encode_dataset(dna_encoder)
+        valid_data = valid_data.encode_dataset(train_data.dna_encoder, 
+                                               train_data.tax_encoder)
     else:
-        train_data = data.encode_dataset(dna_encoder, valid_split=valid_split)
+        train_data = data.encode_dataset(dna_encoder)
         valid_data = None
 
     # Defining model

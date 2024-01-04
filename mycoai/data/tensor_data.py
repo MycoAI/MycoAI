@@ -49,7 +49,7 @@ class TensorData(torch.utils.data.Dataset):
 
     def import_data(self, import_path):
         '''Imports encoded sequences and taxonomies'''
-        content = torch.load(import_path)
+        content = torch.load(import_path, map_location='cpu')
         self.sequences = content['sequences']
         self.taxonomies = content['taxonomies']
         self.dna_encoder = content['dna_encoder']
