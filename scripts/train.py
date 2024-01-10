@@ -1,12 +1,14 @@
 import ast
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 
 script_directory = Path(__file__).parent.absolute()
-parent_directory = script_directory.parent.absolute()
+project_directory = script_directory.parent.absolute()
 
-sys.path.append(str(parent_directory))
+sys.path.append(str(project_directory))
 
 from mycoai.deep.train import DeepITSTrainer
 
@@ -20,7 +22,8 @@ from mycoai.deep.models import deep_its_classifier, BERT, DeepITSClassifier
 from mycoai.deep.models.architectures import ResNet, CNN
 from mycoai.deep.train.weight_schedules import Constant
 
-#from mycoai.training import ClassificationTask
+
+
 
 import configparser
 
@@ -76,23 +79,44 @@ class Train:
         self.deep_parser = deep_parser
 
     def add_dnabarcoder_args(self):
-        self.blast_parser.add_argument('--fasta_filepath',
-                                help='Path to the FASTA file containing ITS sequences.')
-
-        self.blast_parser.add_argument('--out',
-                                default='prediction.csv',
-                                type=str,
-                                nargs=1,
-                                help='Where to save the output to.')
-        self.blast_parser.add_argument('-r', '--reference', required=True, help='the reference fasta file.')
-        self.blast_parser.add_argument('-t', '--threshold', required=True, type=float, default=0.97,
-                                 help='The threshold for the classification.')
-        self.blast_parser.add_argument('-mc', '--mincoverage', type=int, default=300,
-                                 help='Optinal. Minimum coverage required for the identitiy of the BLAST comparison.')
-        self.blast_parser.add_argument('-c', '--classification', help='the classification file in tab. format.')  # optinal
-        self.blast_parser.add_argument('-p', '--classificationpos', type=int, default=0,
-                                 help='the classification position to load the classification.')  # optional
-
+        self.dnabarcoder_parser.add_argument('-i', '--input', required=True, help='the fasta file')
+        self.dnabarcoder_parser.add_argument('-o', '--out', default="dnabarcoder", help='The output folder.')
+        self.dnabarcoder_parser.add_argument('-prefix', '--prefix', default="", help='the prefix of output filenames.')
+        self.dnabarcoder_parser.add_argument('-label', '--label', default="", help='The label to display in the figure.')
+        self.dnabarcoder_parser.add_argument('-labelstyle', '--labelstyle', default='normal',
+                            help='The label style to be displayed: normal, italic, or bold.')
+        self.dnabarcoder_parser.add_argument('-c', '--classification', default="", help='the classification file in tab. format.')
+        # parser.add_argument('-p','--classificationpositions', default="", help='the classification positions for the prediction, separated by ",".')
+        self.dnabarcoder_parser.add_argument('-rank', '--classificationranks', default="",
+                            help='the classification ranks for the prediction, separated by ",".')
+        self.dnabarcoder_parser.add_argument('-st', '--startingthreshold', type=float, default=0, help='starting threshold')
+        self.dnabarcoder_parser.add_argument('-et', '--endthreshold', type=float, default=0, help='ending threshold')
+        self.dnabarcoder_parser.add_argument('-s', '--step', type=float, default=0.001,
+                            help='the step to be increased for the threshold after each step of the prediction.')
+        self.dnabarcoder_parser.add_argument('-ml', '--minalignmentlength', type=int, default=400,
+                            help='Minimum sequence alignment length required for BLAST. For short barcode sequences like ITS2 (ITS1) sequences, minalignmentlength should probably be set to smaller, 50 for instance.')
+        self.dnabarcoder_parser.add_argument('-sim', '--simfilename', help='The similarity matrix of the sequences if exists.')
+        # parser.add_argument('-hp','--higherclassificationpositions', default="", help='The prediction is based on the whole dataset if hp="". Otherwise it will be predicted based on different datasets obtained at the higher classifications, separated by ",".')
+        self.dnabarcoder_parser.add_argument('-higherrank', '--higherclassificationranks', default="",
+                            help='The prediction is done on the whole dataset if higherranks="". Otherwise it will be predicted for different datasets obtained at the higher classifications, separated by ",".')
+        self.dnabarcoder_parser.add_argument('-mingroupno', '--mingroupno', type=int, default=10,
+                            help='The minimum number of groups needed for prediction.')
+        self.dnabarcoder_parser.add_argument('-minseqno', '--minseqno', type=int, default=30,
+                            help='The minimum number of sequences needed for prediction.')
+        self.dnabarcoder_parser.add_argument('-maxseqno', '--maxseqno', type=int, default=20000,
+                            help='Maximum number of the sequences of the predicted taxon name from the classification file will be selected for the comparison to find the best match. If it is not given, all the sequences will be selected.')
+        self.dnabarcoder_parser.add_argument('-maxproportion', '--maxproportion', type=float, default=1,
+                            help='Only predict when the proportion of the sequences the largest group of the dataset is less than maxproportion. This is to avoid the problem of inaccurate prediction due to imbalanced data.')
+        self.dnabarcoder_parser.add_argument('-taxa', '--taxa', default="",
+                            help='The selected taxa separated by commas for local prediction. If taxa=="", all the clades at the given higher positions are selected for prediction.')
+        self.dnabarcoder_parser.add_argument('-removecomplexes', '--removecomplexes', default="",
+                            help='If removecomplexes="yes", indistinguishable groups will be removed before the prediction.')
+        self.dnabarcoder_parser.add_argument('-redo', '--redo', default="", help='Recompute F-measure for the current parameters.')
+        self.dnabarcoder_parser.add_argument('-idcolumnname', '--idcolumnname', default="ID",
+                            help='the column name of sequence id in the classification file.')
+        self.dnabarcoder_parser.add_argument('-display', '--display', default="",
+                            help='If display=="yes" then the plot figure is displayed.')
+        self.dnabarcoder_parser.add_argument('-best', action='store_true', help='Compute best similarity cut-offs for the sequences')
 
 
     def add_deep_args(self):
@@ -174,3 +198,25 @@ class Train:
         optimizer = torch.optim.Adam(model.parameters(), lr=hyperparameters.learning_rate, weight_decay=hyperparameters.weight_decay)
         model, history = DeepITSTrainer.train(model=model, train_data=train_data, valid_data=valid_data, epochs=hyperparameters.epochs, loss=loss, batch_size=hyperparameters.batch_size, sampler=sampler, optimizer=optimizer, metrics=args.metrics, wandb_config=args.wandb_config, wandb_name=args.wandb_name, weight_schedule=Constant(hyperparameters.weight_schedule), warmup_steps=hyperparameters.warmup_steps)
         torch.save(model, args.save_model)
+
+    def dnabarcoder(self, args):
+        arguments = sys.argv[2:]
+        if "-best" in arguments:
+            arguments.remove("-best")
+        #arguments = args.__dict__.items()
+        #arguments = [str(arg) + " " + str(value) for arg, value in arguments if value is not None and value != ""]
+        print(arguments)
+        prediction_script = os.path.join(project_directory, "dnabarcoder", "prediction", "predict.py")
+        arguments.insert(0, prediction_script)
+        exe = sys.executable
+        arguments.insert(0, exe)
+        result = subprocess.run(arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
+        print(result.stdout)
+        if "-best" in sys.argv:
+            arguments.remove("-best")
+            arguments.append("-best")
+            result = subprocess.run(arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
+            print(result.stdout)
+
+
+

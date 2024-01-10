@@ -7,9 +7,9 @@ from pathlib import Path
 from  mycoai.loggingwrapper import LoggingWrapper
 
 script_directory = Path(__file__).parent.absolute()
-parent_directory = script_directory.parent.absolute()
+project_directory = script_directory.parent.absolute()
 
-sys.path.append(str(parent_directory))
+sys.path.append(str(project_directory))
 
 
 if __name__ == '__main__':
@@ -22,20 +22,20 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers(dest='command')
 
     # Subparser for the dnabarcoder predict comman
-    train_dnabarcoder_parser = subparsers.add_parser('dnabarcoder_train')
+    train_dnabarcoder_parser = subparsers.add_parser('train_dnabarcoder', help='Train a dnabarcoder by computing cutoffs for taxonomic classification of fungal ITS sequences.')
 
 
 
 
     # Subparser for the "deep_its" command
-    train_deep_parser = subparsers.add_parser('deep_train')
+    train_deep_parser = subparsers.add_parser('train_deep', help='Train a deep learning model for taxonomic classification of fungal ITS sequences.')
 
     # Subparser for the "its" command
-    classify_dnabarcoder_parser = subparsers.add_parser('dnabarcoder_classify')
+    classify_dnabarcoder_parser = subparsers.add_parser('classify_dnabarcoder', help='Classify fungal ITS sequences using dnabarcoder')
 
 
     # Subparser for the "its" command
-    classify_deep_parser = subparsers.add_parser('deep_classify')
+    classify_deep_parser = subparsers.add_parser('classify_deep', help='Classify fungal ITS sequences using deep learning')
 
 
     trainer = Train(train_dnabarcoder_parser, train_deep_parser)
@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     if args.command == 'train_deep':
         trainer.deep(args)
+    elif args.command == 'train_dnabarcoder':
+        trainer.dnabarcoder(args)
     elif args.command == 'classify_deep':
         classifier.deep(args)
-    else:
-        print('Invalid command. Please try again.')

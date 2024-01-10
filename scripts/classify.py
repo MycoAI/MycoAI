@@ -4,9 +4,9 @@ import sys
 from pathlib import Path
 
 script_directory = Path(__file__).parent.absolute()
-parent_directory = script_directory.parent.absolute()
+project_directory = script_directory.parent.absolute()
 
-sys.path.append(str(parent_directory))
+sys.path.append(str(project_directory))
 
 from mycoai.loggingwrapper import LoggingWrapper
 from mycoai.trad import BLASTClassifier
