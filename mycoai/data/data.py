@@ -10,6 +10,7 @@ from mycoai import utils, plotter
 from .tensor_data import TensorData
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+from Bio import SeqIO
 
 
 class Data: 
@@ -153,17 +154,15 @@ class Data:
                 valid.export_fasta(valid.name + '.fasta')
 
         return train, valid
-
+    
     def read_fasta(self, filename, tax_parser=None):
         '''Reads a FASTA file into a Pandas dataframe'''
 
-        # NOTE using .readlines(x) limits the data to x bytes, use for debugging
-        unite_file = open(filename).readlines()
-
         data = []
-        for i in tqdm(range(0,len(unite_file),2)):
-            header = unite_file[i][:-1] # Remove \n 
-            seq = unite_file[i+1][:-1] # Sequence on the next line, remove \n
+        seqrecords=list(SeqIO.parse(filename, "fasta"))
+        for seqrecord in tqdm(seqrecords):
+            header=seqrecord.description
+            seq=str(seqrecord.seq).upper()
             if tax_parser is not None:
                 data_row = tax_parser(header) + [seq]
             else:

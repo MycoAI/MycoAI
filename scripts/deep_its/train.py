@@ -4,7 +4,9 @@ from mycoai import utils
 from mycoai.data import Data
 from mycoai.deep.models import DeepITSClassifier, ResNet, BERT
 from mycoai.deep.train import DeepITSTrainer
+from mycoai.deep.train.loss import CrossEntropyLoss
 from mycoai.deep.train.weight_schedules import Constant
+
 
 def train(fasta_filepath, save_model, base_arch_type, epochs, batch_size, 
           valid_split, learning_rate, weight_decay, weighted_loss, 
@@ -42,18 +44,18 @@ def train(fasta_filepath, save_model, base_arch_type, epochs, batch_size,
         output_head = 'multi'
         fcn = [128,50,64]
     model = DeepITSClassifier(base_arch, train_data.dna_encoder, 
-                              train_data.tax_encoder, fcn, output_head)
+                              train_data.tax_encoder, fcn, output=output_head)
     
     # Training
     sampler = train_data.weighted_sampler() if weighted_sampling else None
     loss = None
     if weighted_loss:
-        loss = train_data.weighted_loss(torch.nn.CrossEntropyLoss, sampler)
+        loss = train_data.weighted_loss(CrossEntropyLoss, sampler)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, 
                                  weight_decay=weight_decay)
     model, history = DeepITSTrainer.train(model, train_data, valid_data, epochs,
                                           loss, batch_size, sampler, optimizer,
-                                          weight_schedule=lvl_weights)
+                                          levels=lvl_weights)
     torch.save(model, save_model)
 
 

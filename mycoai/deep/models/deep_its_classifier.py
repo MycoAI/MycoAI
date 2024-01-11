@@ -67,7 +67,7 @@ class DeepITSClassifier(torch.nn.Module):
         if len(fcn_layers) > 0:
             self.bottleneck_index = np.argmin(fcn_layers)
         
-        elif output == 'infer_parent':
+        if output == 'infer_parent':
             self.output = mmo.InferParent(self.classes, tax_encoder, base_level)
             self.base_level = base_level
         elif output == 'infer_sum':
@@ -80,7 +80,7 @@ class DeepITSClassifier(torch.nn.Module):
             self.chained_config = chained_config
         elif output == 'tree':
             self.output = mmo.SoftmaxTree(self.classes, tax_encoder, d_hidden)
-            
+ 
         self.to(utils.DEVICE)
 
     def _forward(self, x):
