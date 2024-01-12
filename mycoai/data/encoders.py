@@ -2,7 +2,6 @@
 
 import io
 import re
-import math
 import torch
 import sklearn
 import itertools
@@ -118,7 +117,7 @@ class KmerTokenizer(KmerEncoder):
     def __init__(self, k=4, alphabet='ACGT', length=512, overlapping=False):
         super().__init__(k, alphabet, overlapping)
         self.length = length
-        min_token = max(utils.TOKENS.values) + 1
+        min_token = max(utils.TOKENS.values()) + 1
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
         self.vocab_size = len(self.map) + min_token
 
@@ -148,7 +147,7 @@ class KmerOneHot(KmerEncoder):
     def __init__(self, k=3, alphabet='ACGT', length=512, overlapping=False): 
         super().__init__(k, alphabet, overlapping)
         self.length = length
-        min_token = max(utils.TOKENS.values) + 1
+        min_token = max(utils.TOKENS.values()) + 1
         self.map = {word:i+min_token for i, word in enumerate(self.words)}
         self.vocab_size = len(self.map) + min_token
 
@@ -246,7 +245,6 @@ class TaxonEncoder:
             if num_parents > 0: 
                 inference_matrix = torch.zeros((num_classes, num_parents),
                                                dtype=torch.float32)
-                inference_matrix.to_sparse()
                 inference_matrix = inference_matrix.to(utils.DEVICE)
                 inference_matrices.append(inference_matrix)
             num_parents = num_classes

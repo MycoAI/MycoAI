@@ -9,11 +9,11 @@ class InferParent(torch.nn.Module):
     '''Infers parent classes by looking in the inference matrix and seeing what
     parent a child class is most often part of.'''
 
-    def __init__(self, classes, tax_encoder, base_level='species'):
+    def __init__(self, classes, tax_encoder, max_level='species'):
         super().__init__()
         self.tax_encoder = tax_encoder
-        self.base_level = utils.LEVELS.index(base_level)
-        self.fc1 = torch.nn.LazyLinear(out_features=classes[self.base_level])
+        self.max_level = utils.LEVELS.index(max_level)
+        self.fc1 = torch.nn.LazyLinear(out_features=classes[self.max_level])
         self.softmax = torch.nn.Softmax(dim=1) 
         self.classes = classes
 
@@ -21,7 +21,7 @@ class InferParent(torch.nn.Module):
         
         # Initialize output list with zeros until base level
         output = [torch.zeros((x.shape[0], self.classes[lvl]), device=x.device)
-                                         for lvl in range(5,self.base_level,-1)]
+                                         for lvl in range(5,self.max_level,-1)]
         
         # At base level, make a prediction
         x = self.fc1(x) # Linear layer
@@ -29,7 +29,7 @@ class InferParent(torch.nn.Module):
         _, pred = torch.max(output[0],1) # Get argmax
 
         # Above base level, infer parents 
-        for i in range(self.base_level-1,-1,-1): 
+        for i in range(self.max_level-1,-1,-1): 
             # Get parent indices by retrieving the argmax of inference matrix
             _, pred = torch.max(self.tax_encoder.inference_matrices[i][pred], 1)
             # Mimick probability tensor by one-hot encoding
@@ -44,11 +44,11 @@ class InferSum(torch.nn.Module):
     '''Sums softmax probabilities of child classes to infer the probability of 
     a parent, using inference matrices.'''
 
-    def __init__(self, classes, tax_encoder, base_level='species'):
+    def __init__(self, classes, tax_encoder, max_level='species'):
         super().__init__()
         self.tax_encoder = tax_encoder
-        self.base_level = utils.LEVELS.index(base_level)
-        self.fc1 = torch.nn.LazyLinear(out_features=classes[self.base_level])
+        self.max_level = utils.LEVELS.index(max_level)
+        self.fc1 = torch.nn.LazyLinear(out_features=classes[self.max_level])
         self.softmax = torch.nn.Softmax(dim=1) 
         self.classes = classes
     
@@ -56,14 +56,14 @@ class InferSum(torch.nn.Module):
         
         # Initialize output list with zeros until base level
         output = [torch.zeros((x.shape[0], self.classes[lvl]), device=x.device)
-                                         for lvl in range(5,self.base_level,-1)]
+                                         for lvl in range(5,self.max_level,-1)]
         
         # At base level, make a prediction
         x = self.fc1(x) # Linear layer
         output.insert(0, self.softmax(x)) # Softmax
 
         # Above base level, infer parents
-        for i in range(self.base_level-1,-1,-1):
+        for i in range(self.max_level-1,-1,-1):
             output.insert(0, output[0] @ self.tax_encoder.inference_matrices[i])
 
         return output    
@@ -72,16 +72,25 @@ class InferSum(torch.nn.Module):
 class MultiHead(torch.nn.Module):
     '''Predicting multiple taxon levels using different heads.'''
 
-    def __init__(self, classes):
+    def __init__(self, classes, max_level='species'):
         super().__init__()
+        self.max_level = utils.LEVELS.index(max_level) 
         self.output = torch.nn.ModuleList(
             [torch.nn.LazyLinear(out_features=classes[i]) 
-             for i in range(len(classes))])
+             for i in range(self.max_level+1)])
         self.softmax = torch.nn.ModuleList(
-            [torch.nn.Softmax(dim=1) for i in range(len(classes))]) 
+            [torch.nn.Softmax(dim=1) for i in range(self.max_level+1)])
+        self.classes = classes
     
     def forward(self, x, levels=range(6)):
-        outputs = [self.softmax[i](self.output[i](x)) for i in levels]
+        outputs = []
+        for lvl in levels:
+            if lvl > self.max_level: # Zeros if above max_level
+                outputs.append(torch.zeros((x.shape[0], self.classes[lvl]), 
+                                           device=x.device))
+            else:
+                outputs.append(self.softmax[lvl](self.output[lvl](x)))
+
         return outputs
     
     

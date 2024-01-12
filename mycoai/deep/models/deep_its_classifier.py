@@ -12,7 +12,7 @@ class DeepITSClassifier(torch.nn.Module):
     Supports several architecture variations.'''
 
     def __init__(self, base_arch, dna_encoder, tax_encoder, fcn_layers=[], 
-                 dropout=0, output='infer_parent', base_level='species',
+                 dropout=0, output='infer_parent', max_level='species',
                  chained_config=[False,True,True]):
         '''Creates network based on specified archticture and encoders
 
@@ -30,9 +30,9 @@ class DeepITSClassifier(torch.nn.Module):
             Dropout percentage for the dropout layer
         output:'infer_parent'|'infer_sum'|'multi'|'chained'|'tree'
             The type of output head(s) for the neural network.
-        base_level: str
-            What level to use as starting point (only for 'infer_parent' 
-            and 'infer_sum' output heads, default is 'species').
+        max_level: str
+            Until what level to predict (only for 'infer_parent', 'infer_sum', 
+            and 'multi' output heads, default is 'species').
         chained_config: list[bool]
             List of length 3 indicating the configuration for ChainedMultiHead.
             Corresponding to arguments: ascending, use_probs, and all_access.
@@ -68,13 +68,14 @@ class DeepITSClassifier(torch.nn.Module):
             self.bottleneck_index = np.argmin(fcn_layers)
         
         if output == 'infer_parent':
-            self.output = mmo.InferParent(self.classes, tax_encoder, base_level)
-            self.base_level = base_level
+            self.output = mmo.InferParent(self.classes, tax_encoder, max_level)
+            self.max_level = max_level
         elif output == 'infer_sum':
-            self.output = mmo.InferSum(self.classes, tax_encoder, base_level)
-            self.base_level = base_level
+            self.output = mmo.InferSum(self.classes, tax_encoder, max_level)
+            self.max_level = max_level
         elif output == 'multi':
-            self.output = mmo.MultiHead(self.classes)
+            self.output = mmo.MultiHead(self.classes, max_level)
+            self.max_level = max_level
         elif output == 'chained':
             self.output = mmo.ChainedMultiHead(self.classes, *chained_config)
             self.chained_config = chained_config
@@ -144,6 +145,16 @@ class DeepITSClassifier(torch.nn.Module):
         classification[self.masked_levels] = utils.UNKNOWN_STR
         return classification
     
+    def set_max_level(self, level):
+        '''For multi-head output, changes the max_level.'''
+
+        if type(self.output) != mmo.MultiHead:
+            raise ValueError("Can only change max_level for multi head model.")
+        self.output.max_level = utils.LEVELS.index(level)
+        if self.output.max_level < 5:
+            # Makes sure that levels deeper than max_level get masked out
+            self.set_masked_levels(utils.LEVELS[self.output.max_level+1:])
+
     def set_masked_levels(self, levels: list):
         '''These levels will always return utils.UNKNOWN_STR in classification.
         Useful when model does not have a sufficient accuracy on a level.'''
@@ -213,7 +224,7 @@ class DeepITSClassifier(torch.nn.Module):
             'output_chained_ascending':getattr(self,'chained_config', dummy)[0],
             'output_chained_use_probs':getattr(self,'chained_config', dummy)[1],
             'output_chained_allaccess':getattr(self,'chained_config', dummy)[2],
-            'output_base_level': getattr(self, 'base_level', None),
+            'output_max_level': getattr(self, 'max_level', None),
             'train_ref': getattr(self, 'train_ref', None)
         }
         return {**dna_encoder, **base_arch, **config}
