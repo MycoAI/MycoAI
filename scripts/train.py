@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+import random
 
 
 script_directory = Path(__file__).parent.absolute()
@@ -12,17 +13,14 @@ sys.path.append(str(project_directory))
 
 from mycoai.deep.train import DeepITSTrainer
 
-from mycoai import utils, data
-from mycoai.loggingwrapper import LoggingWrapper
-from mycoai.trad import BLASTClassifier
 import torch
 from  mycoai.data import Data
-from mycoai import utils, plotter
-from mycoai.deep.models import deep_its_classifier, BERT, DeepITSClassifier
+from mycoai import utils
+from mycoai.deep.models import BERT, DeepITSClassifier
 from mycoai.deep.models.architectures import ResNet, CNN
 from mycoai.deep.train.weight_schedules import Constant
 
-
+from loggingwrapper import LoggingWrapper
 
 
 import configparser
@@ -116,7 +114,8 @@ class Train:
                             help='the column name of sequence id in the classification file.')
         self.dnabarcoder_parser.add_argument('-display', '--display', default="",
                             help='If display=="yes" then the plot figure is displayed.')
-        self.dnabarcoder_parser.add_argument('-best', action='store_true', help='Compute best similarity cut-offs for the sequences')
+        self.dnabarcoder_parser.add_argument('-best', '--best', action='store_true', help='Compute best similarity cut-offs for the sequences', default=False)
+        self.dnabarcoder_parser.add_argument('-unique_rank', '--unique_rank', default=None, type=str, help='Select only unique sequences. If a value is also passed, unique sequences at that rank will be selected.', choices=['', 'phylum', 'class', 'order', 'family', 'genus', 'species'])
 
 
     def add_deep_args(self):
@@ -200,23 +199,119 @@ class Train:
         torch.save(model, args.save_model)
 
     def dnabarcoder(self, args):
+        '''
+         This function is used to predict the similarity cut-off for sequence identification based on taxonomic classification.
+         The prediction is implemented as a pipeline of three steps: (1) Select unique sqeuences at the given rank, (2) Predict the similarity cut-off for the selected sequences, and (3) Compute the best similarity cut-off for the whole dataset.
+         Step 1 and 3 are optional and are only executed if -unique_rank and -best are set, respectively.
+        Parameters
+        ----------
+        args
+
+        Returns
+        -------
+
+        '''
+
+        LoggingWrapper.info("Starting dnabarcoder prediction...", color="green",bold=True)
         arguments = sys.argv[2:]
-        if "-best" in arguments:
-            arguments.remove("-best")
-        #arguments = args.__dict__.items()
-        #arguments = [str(arg) + " " + str(value) for arg, value in arguments if value is not None and value != ""]
-        print(arguments)
+        unique_fastafile_name = None
+        classification_file_name = args.classification
+        predict_file_extension = ".cutoffs.json"
+
+        # -----------------select sequences if unique_rank option is set-------------------------
+        if args.unique_rank is not None:
+            LoggingWrapper.info("Selecting unique sequences...", color="green")
+            nameExt = str(random.randint(0, 100000))
+            unique_fastafile_name = args.out + "/" + Path(args.input).stem + "." + nameExt + ".fasta"
+            classification_file_name = args.out + "/" + Path(args.input).stem + "." + nameExt + ".classification"
+            predict_file_extension = "." + nameExt + predict_file_extension
+            if args.unique_rank == "":
+                unique_command_args = ["-i", args.input, "-o", unique_fastafile_name, "-c", args.classification, "-rank", args.unique_rank, "-unique", "yes"]
+            else:
+                unique_command_args = ["-i", args.input, "-o", unique_fastafile_name, "-c", args.classification, "-unique", "yes"]
+            unique_script = os.path.join(project_directory, "dnabarcoder", "aidscripts", "selectsequences.py")
+            unique_command_args.insert(0, unique_script)
+            exe = sys.executable
+            unique_command_args.insert(0, exe)
+            unique_result = subprocess.run(unique_command_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', check=True)
+            if unique_result.returncode != 0:
+                LoggingWrapper.error("Error while selecting unique sequences.", color="red", bold=True)
+                for line in unique_result.stderr.splitlines():
+                    LoggingWrapper.error(line)
+                sys.exit(unique_result.returncode)
+            LoggingWrapper.info("Unique sequences selected.", color="green")
+            for line in unique_result.stdout.splitlines():
+                LoggingWrapper.info(line)
+            if (args.unique_rank != ""):
+                try:
+                    unique_rank_index = arguments.index("-unique_rank")
+                except ValueError:
+                    unique_rank_index = arguments.index("--unique_rank")
+                del arguments[unique_rank_index + 1]
+            try:
+                arguments.remove("-unique_rank")
+            except ValueError:
+                arguments.remove("--unique_rank")
+            try:
+                input_fastfile_index = arguments.index("-i")
+            except ValueError:
+                input_fastfile_index = arguments.index("--input")
+            arguments[input_fastfile_index + 1] = unique_fastafile_name
+            try:
+                input_classification_index = arguments.index("-c")
+            except ValueError:
+                input_classification_index = arguments.index("--classification")
+            arguments[input_classification_index + 1] = classification_file_name
+
+        # -----------------predict similarity cut-offs-------------------------
+        if args.best:
+            try:
+                arguments.remove("-best")
+            except ValueError:
+                arguments.remove("--best")
         prediction_script = os.path.join(project_directory, "dnabarcoder", "prediction", "predict.py")
         arguments.insert(0, prediction_script)
         exe = sys.executable
         arguments.insert(0, exe)
-        result = subprocess.run(arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
-        print(result.stdout)
-        if "-best" in sys.argv:
-            arguments.remove("-best")
-            arguments.append("-best")
-            result = subprocess.run(arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
-            print(result.stdout)
+        LoggingWrapper.info("Predicting similarity cut-offs...", color="green")
+        predict_result = subprocess.run(arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', check=True)
+        if predict_result.returncode != 0:
+            LoggingWrapper.error("Error while predicting similarity cut-offs.", color="red", bold=True)
+            for line in predict_result.stderr.splitlines():
+                LoggingWrapper.error(line)
+            sys.exit(predict_result.returncode)
+        LoggingWrapper.info("Similarity cut-offs predicted.", color="green")
+        for line in predict_result.stdout.splitlines():
+            LoggingWrapper.info(line)
+        if unique_fastafile_name is not None:
+            Path(unique_fastafile_name).unlink()
+
+        # -----------------compute best similarity cut-offs if best option is set-------------------------
+        if args.best:
+            LoggingWrapper.info("Computing best similarity cut-offs...", color="green")
+            if args.prefix == "":
+                predict_file = args.out + "/" + Path(args.input).stem + predict_file_extension
+            else:
+                predict_file = args.out + "/" + args.prefix + predict_file_extension
+
+            best_command_args =  ["-i", predict_file, "-o", args.out, "-prefix", args.prefix, "-c",  classification_file_name]
+
+            best_cuttoff_script = os.path.join(project_directory, "dnabarcoder", 'prediction', 'computeBestCutoffs.py')
+            best_command_args.insert(0, best_cuttoff_script)
+            exe = sys.executable
+            best_command_args.insert(0, exe)
+            best_cuttoffs_result = subprocess.run(best_command_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', check=True)
+            if best_cuttoffs_result.returncode != 0:
+                LoggingWrapper.error("Error while computing best similarity cut-offs.", color="red", bold=True)
+                for line in best_cuttoffs_result.stderr.splitlines():
+                    LoggingWrapper.error(line)
+                sys.exit(best_cuttoffs_result.returncode)
+            LoggingWrapper.info("Best similarity cut-offs computed.", color="green")
+            for line in best_cuttoffs_result.stdout.splitlines():
+                LoggingWrapper.info(line)
+            if (classification_file_name != args.classification):
+                Path(classification_file_name).unlink()
+            LoggingWrapper.info("Prediction finished.", color="green", bold=True)
 
 
 

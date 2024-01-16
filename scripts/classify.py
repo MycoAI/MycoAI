@@ -8,11 +8,9 @@ project_directory = script_directory.parent.absolute()
 
 sys.path.append(str(project_directory))
 
-from mycoai.loggingwrapper import LoggingWrapper
 from mycoai.trad import BLASTClassifier
 import torch
-from mycoai import utils, plotter
-
+from mycoai import utils
 
 
 class Classify:

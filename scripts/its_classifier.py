@@ -4,8 +4,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from  mycoai.loggingwrapper import LoggingWrapper
-
 script_directory = Path(__file__).parent.absolute()
 project_directory = script_directory.parent.absolute()
 

@@ -5,14 +5,11 @@
 import sys
 if sys.version_info[0] >= 3:
     unicode = str
-import numpy as np
-import os, argparse
+import os
 from Bio import SeqIO
-import json
 import multiprocessing
-import random
 
-from mycoai.loggingwrapper import LoggingWrapper
+from loggingwrapper import LoggingWrapper
 
 class BLASTClassifier:
     def __init__(self, args):
