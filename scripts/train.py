@@ -203,12 +203,7 @@ class Train:
          This function is used to predict the similarity cut-off for sequence identification based on taxonomic classification.
          The prediction is implemented as a pipeline of three steps: (1) Select unique sqeuences at the given rank, (2) Predict the similarity cut-off for the selected sequences, and (3) Compute the best similarity cut-off for the whole dataset.
          Step 1 and 3 are optional and are only executed if -unique_rank and -best are set, respectively.
-        Parameters
-        ----------
-        args
-
-        Returns
-        -------
+        :param args: the arguments of the command
 
         '''
 
@@ -311,7 +306,7 @@ class Train:
                 LoggingWrapper.info(line)
             if (classification_file_name != args.classification):
                 Path(classification_file_name).unlink()
-            LoggingWrapper.info("Prediction finished.", color="green", bold=True)
+            LoggingWrapper.info("Dnavabarcoder training finished.", color="green", bold=True)
 
 
 

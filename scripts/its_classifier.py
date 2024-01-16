@@ -40,7 +40,7 @@ if __name__ == '__main__':
     trainer.add_dnabarcoder_args()
     trainer.add_deep_args()
     classifier = Classify(classify_dnabarcoder_parser, classify_deep_parser)
-    classifier.add_blast_args()
+    classifier.add_dnabarcoder_args()
     classifier.add_deep_args()
 
     args = parser.parse_args()
@@ -51,3 +51,8 @@ if __name__ == '__main__':
         trainer.dnabarcoder(args)
     elif args.command == 'classify_deep':
         classifier.deep(args)
+    elif args.command == 'classify_dnabarcoder':
+        classifier.dnabarcoder(args)
+    else:
+        parser.print_help()
+        exit(1)
