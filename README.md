@@ -389,7 +389,17 @@ result = DeepITSTrainer.test(model, test_data)
 ```
 
 ### Traditional ITS classifiers
-Soon, alternative methods like BLAST (+DNABarcoder) and RDP classifier will be included in MycoAI. 
+## Dnabarcoder
+The pacakge includes a wrapper for the dnaBarcoder tool's prediction and classification. 
+To see the command line options or prediction/training with ITS seqeunces, run the following command in [scripts](./scripts) folder:
+```commandline
+python -m its_classifier train_dnabarcoder -h
+```
+Similarly, to see the command line options for classification with dnabarcoder, run the following command in [scripts](./scripts) folder:
+```commandline
+python -m its_classifier classify_dnabarcoder -h
+```
+For more information on the tool, see [here](https://github.com/vuthuyduong/dnabarcoder).
 
 #### Example
 ```python
