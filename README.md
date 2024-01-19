@@ -390,16 +390,86 @@ result = DeepITSTrainer.test(model, test_data)
 
 ### Traditional ITS classifiers
 ## Dnabarcoder
-The pacakge includes a wrapper for the dnaBarcoder tool's prediction and classification. 
-To see the command line options or prediction/training with ITS seqeunces, run the following command in [scripts](./scripts) folder:
-```commandline
-python -m its_classifier train_dnabarcoder -h
-```
-Similarly, to see the command line options for classification with dnabarcoder, run the following command in [scripts](./scripts) folder:
-```commandline
-python -m its_classifier classify_dnabarcoder -h
-```
-For more information on the tool, see [here](https://github.com/vuthuyduong/dnabarcoder).
+The package includes a wrapper for the dnaBarcoder tool's prediction and classification. For more information on the tool, see [here](https://github.com/vuthuyduong/dnabarcoder).
+
+### Training
+The training is performed with `train_dnabarcoder` subcommand by executing the following command in [scripts](./scripts) folder
+
+    python -m  its_classifier train_dnabarcoder <subcommand args>
+
+The arguments for `train_dnabarcoder` subcommand are as follows:
+
+| Argument                                       | Required | Description                                                                                                                                                                                     | Values                       |
+|------------------------------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------|
+| `-i` or `--input`                              | Yes      | The path to the input fasta file.                                                                                                                                                               | `path`                       |
+| `-o` or `--out`                                | No       | The output folder where results will be saved. (default is "dnabarcoder")                                                                                                                       | `path`                       |
+| `-prefix` or `--prefix`                        | No       | The prefix of output filenames.                                                                                                                                                                 | `string`                     |
+| `-label` or `--label`                          | No       | The label to display in the figure.                                                                                                                                                             | `string`                     |
+| `-labelstyle` or `--labelstyle`                | No       | The label style to be displayed: normal, italic, or bold. (default is 'normal')                                                                                                                 | ['normal', 'italic', 'bold'] |
+| `-c` or `--classification`                     | No       | The classification file in tabular format.                                                                                                                                                      | `path`                       |
+| `-rank` or `--classificationranks`             | No       | The classification ranks for the prediction, separated by commas.                                                                                                                               | `string`                     |
+| `-st` or `--startingthreshold`                 | No       | Starting threshold for prediction.                                                                                                                                                              | `float`                      |
+| `-et` or `--endthreshold`                      | No       | Ending threshold for prediction.                                                                                                                                                                | `float`                      |
+| `-s` or `--step`                               | No       | The step to be increased for the threshold after each step of the prediction. (default is 0.001)                                                                                                | `float`                      |
+| `-ml` or `--minalignmentlength`                | No       | Minimum sequence alignment length required for BLAST. For short barcode sequences like ITS2 (ITS1) sequences, minalignmentlength should probably be set to a smaller value, e.g., 50.           | `int`                        |
+| `-sim` or `--simfilename`                      | No       | The similarity matrix of the sequences if it exists.                                                                                                                                            | `path`                       |
+| `-higherrank` or `--higherclassificationranks` | No       | The prediction is done on the whole dataset if higherranks="" Otherwise, it will be predicted for different datasets obtained at higher classifications, separated by commas.                   | `string`                     |
+| `-mingroupno` or `--mingroupno`                | No       | The minimum number of groups needed for prediction.                                                                                                                                             | `int`                        |
+| `-minseqno` or `--minseqno`                    | No       | The minimum number of sequences needed for prediction.                                                                                                                                          | `int`                        |
+| `-maxseqno` or `--maxseqno`                    | No       | Maximum number of sequences of the predicted taxon name from the classification file that will be selected for comparison to find the best match. If not given, all sequences will be selected. | `int`                        |
+| `-maxproportion` or `--maxproportion`          | No       | Only predict when the proportion of sequences in the largest group of the dataset is less than maxproportion. This is to avoid the problem of inaccurate prediction due to imbalanced data.     | `float`                      |
+| `-taxa` or `--taxa`                            | No       | The selected taxa separated by commas for local prediction. If taxa="", all clades at the given higher positions are selected for prediction.                                                   | `string`                     |
+| `-removecomplexes` or `--removecomplexes`      | No       | If removecomplexes="yes", indistinguishable groups will be removed before the prediction.                                                                                                       | `string`                     |
+| `-redo` or `--redo`                            | No       | Recompute F-measure for the current parameters.                                                                                                                                                 | `string`                     |
+| `-idcolumnname` or `--idcolumnname`            | No       | The column name of the sequence ID in the classification file.                                                                                                                                  | `string`                     |
+| `-display` or `--display`                      | No       | If display="yes" then the plot figure is displayed.                                                                                                                                             | `string`                     |
+| `-best` or `--best`                            | No       | Compute best similarity cut-offs for the sequences. (Boolean flag, no values required, default is False)                                                                                        | `boolean`                    |
+| `-unique_rank` or `--unique_rank`              | No       | Select only unique sequences. If a value is also passed, unique sequences at that rank will be selected. Choices: ['phylum', 'class', 'order', 'family', 'genus', 'species']                    | `string`                     |
+
+
+
+The `train_dnabarcoder` subcommand is implemenrted as a 3-step process: 
+1. Select unique sqeuences at the given rank
+2. Predict the similarity cut-off for the selected sequences
+3. Compute the best similarity cut-off for the whole dataset
+
+Step 1 and 3 are optional and are only executed if -unique_rank and -best options are set, respectively. 
+
+### Classification
+The clsssification is performed with `classify_dnabarcoder` subcommand by executing the following command in [scripts](./scripts) folder
+
+    python -m  its_classifier classify_dnabarcoder <subcommand args>
+
+The arguments for `classify_dnabarcoder` subcommand are as follows:
+
+| Argument                                        | Required | Description                                                                                                                                                                           | Values    |
+|-------------------------------------------------|----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
+| `-i` or `--input`                               | Yes      | The path to the classified file.                                                                                                                                                      | `path`    |
+| `-f` or `--fasta`                               | No       | The fasta file of the sequences for saving unidentified sequences. Optional.                                                                                                          | `path`    |
+| `-c` or `--classification`                      | No       | The classification file in tabular format.                                                                                                                                            | `path`    |
+| `-r` or `--reference`                           | No       | The reference fasta file, in case the classification of the sequences is given in the sequence headers.                                                                               | `path`    |
+| `-o` or `--out`                                 | No       | The output folder where results will be saved. (default is "dnabarcoder")                                                                                                             | `path`    |
+| `-fmt` or `--inputformat`                       | No       | The format of the classified file. Options: "tab delimited" (default) and "blast" (the format of the BLAST output with outfmt=6).                                                     | `string`  |
+| `-cutoff` or `--globalcutoff`                   | No       | The global cutoff to assign the sequences to predicted taxa. If the cutoffs file is not given, this value will be taken for sequence assignment.                                      | `float`   |
+| `-confidence` or `--globalconfidence`           | No       | The global confidence to assign the sequences to predicted taxa.                                                                                                                      | `float`   |
+| `-rank` or `--classificationrank`               | No       | The classification rank.                                                                                                                                                              | `string`  |
+| `-prefix` or `--prefix`                         | No       | The prefix of output filenames.                                                                                                                                                       | `string`  |
+| `-cutoffs` or `--cutoffs`                       | No       | The json file containing the local cutoffs to assign the sequences to the predicted taxa.                                                                                             | `path`    |
+| `-minseqno` or `--minseqno`                     | No       | The minimum number of sequences for using the predicted cut-offs to assign sequences. Only needed when the cutoffs file is given.                                                     | `int`     |
+| `-mingroupno` or `--mingroupno`                 | No       | The minimum number of groups for using the predicted cut-offs to assign sequences. Only needed when the cutoffs file is given.                                                        | `int`     |
+| `-ml` or `--minalignmentlength`                 | No       | Minimum sequence alignment length required for BLAST. For short barcode sequences like ITS2 (ITS1) sequences, minalignmentlength should probably be set to a smaller value, e.g., 50. | `int`     |
+| `-saveclassifiedonly` or `--saveclassifiedonly` | No       | The option to save all (False) or only classified sequences (True) in the classification output.                                                                                      | `boolean` |
+| `-idcolumnname` or `--idcolumnname`             | No       | The column name of sequence ID in the classification file.                                                                                                                            | `string`  |
+| `-display` or `--display`                       | No       | If display=="yes" then the Krona HTML is displayed.                                                                                                                                   | `string`  |
+| `-search_refernce` or `--search_refernce`       | No       | The reference fasta file used in the BLAST search.                                                                                                                                    | `path`    |
+
+
+The `classify_dnabarcoder` subcommand is implemented as a 2-step process:
+1. Perform search using BLAST against the reference database to find best matches
+2. Classify the sequences based on the best matches
+
+The search step is performed automatically if the input file is a FASTA. To skip the BLAST search step, the input file should be a TAB seperated file with the following columns: sequence ID, Reference sequence ID, BLAST score, BLAST similarity and BLAST coverage.
+The column names in the header should be: `ID`,`ReferenceID`,`BLAST score`, `BLAST sim`, `BLAST coverage`.
 
 #### Example
 ```python

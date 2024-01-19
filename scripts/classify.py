@@ -94,7 +94,7 @@ class Classify:
         arguments = sys.argv[2:]
         if (self.is_fasta_file(args.input, 1)):
             if (args.search_refernce is None):
-                LoggingWrapper.error("Input is a FASTA file, but no reference file is given FOR blast search.", color="red", bold=True)
+                LoggingWrapper.error("Input is a FASTA file, but no reference file is given for BLAST search.", color="red", bold=True)
                 sys.exit(1)
 
             search_script = os.path.join(project_directory, "dnabarcoder", "classification", "search.py")
