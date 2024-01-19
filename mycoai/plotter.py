@@ -10,11 +10,16 @@ from mycoai import utils
 def counts_barchart(dataprep, level='phylum', id=''):
     '''Plots the number of sequences per class'''
 
-    counts = dataprep.data.groupby(level, as_index=False)['id'].count().sort_values(
-        'id', ascending=False)
-    ax = counts.plot.bar(ylabel='# sequences', legend=False)
-    ax.set_xticklabels(counts[level])
+    data = dataprep.data[dataprep.data[level] != utils.UNKNOWN_STR]
+    counts = data.groupby(level, as_index=False)['id'].count().sort_values('id', 
+                                                                ascending=False)
+    ax = counts.plot.bar(ylabel='# sequences', xlabel=level, width=1, 
+                         color='#636EFA', figsize=(7,4), legend=False)
+    ax.set_xticklabels([])
+    ax.set_xticks([])
+    ax.set_yscale('log')
     id = '_' + id if len(id) > 0 else ''
+    plt.tight_layout()
     plt.savefig(utils.OUTPUT_DIR + level + '_counts' + id + '.png')
     plt.close()
 

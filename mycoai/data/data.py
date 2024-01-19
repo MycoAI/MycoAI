@@ -295,6 +295,8 @@ class Data:
 
         if remove_unidentified:
             data = self.data[self.data[level] != utils.UNKNOWN_STR]
+        else:
+            data = self.data
         data = data.groupby(level).filter(lambda x: len(x) > min_samples)
         groups = [group for _, group in data.groupby(level)]
         data = pd.concat(random.sample(groups, min(max_classes, len(groups))))

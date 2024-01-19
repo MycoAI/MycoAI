@@ -64,7 +64,7 @@ class InferSum(torch.nn.Module):
 
         # Above base level, infer parents
         for i in range(self.max_level-1,-1,-1):
-            output.insert(0, output[0] @ self.tax_encoder.inference_matrices[i])
+            output.insert(0, self.tax_encoder.infer_parent_probs(output[0], i))
 
         return output    
     

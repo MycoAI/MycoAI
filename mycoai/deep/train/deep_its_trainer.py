@@ -226,8 +226,10 @@ class DeepITSTrainer:
         for i in range(5):
             this_lvl = full_prediction[i]
             next_lvl = full_prediction[i+1]
-            cons = np.sum([tax_encoder.inference_matrices[i].cpu().numpy()[b,a] 
-                           for a,b in zip(this_lvl, next_lvl)]) / n_rows
+            m = tax_encoder.inference_matrices[i] # Get inference matrix
+            # Normalize rows, obtain conditional probabilities per child
+            m = (m / m.sum(dim=1, keepdim=True)).cpu().numpy()
+            cons = np.sum([m[b,a] for a,b in zip(this_lvl, next_lvl)]) / n_rows
             consistencies.append(cons)
 
         return consistencies

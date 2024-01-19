@@ -293,12 +293,23 @@ class TaxonEncoder:
         return decoding
     
     def finish_training(self):
-        '''Normalizes rows of inference matrices to obtain transition 
-        probabilities of going from child class to parent class.'''
-        for matrix in self.inference_matrices:
-            for i in range(matrix.shape[0]):
-                matrix[i] = matrix[i]/matrix[i].sum()
         self.train = False
+
+    def infer_parent_probs(self, y, parent_lvl):
+        '''Calculates probabilities for parents given child probabilities'''
+        m = self.inference_matrices[parent_lvl] # Get inference matrix
+        y = y.to(m.device)
+        # Normalize rows, obtain conditional probabilities per child
+        m = m / m.sum(dim=1, keepdim=True) 
+        return y @ m
+
+    def infer_child_probs(self, y, child_lvl):
+        '''Calculates probabilities for children given parent probabilities'''
+        m = self.inference_matrices[child_lvl-1] # Get inference matrix
+        y = y.to(m.device)
+        # Normalize columns, obtain conditional probabilities per parent
+        m = m / m.sum(dim=0)
+        return y @ m.t()
 
     def flat_label(self, y, lvl):
         '''Maps y from specified level to unique number for ALL levels.'''

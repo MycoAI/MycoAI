@@ -28,8 +28,7 @@ class LabelSmoothing:
             not exceed 1 (default is [0.01, 0.01, 0.01, 0.01, 0.01, 0.01])'''
         
         self.smoothing = torch.tensor(smoothing, dtype=torch.float32)
-        self.inference_matrices = tax_encoder.inference_matrices
-        self.classes = tax_encoder.classes
+        self.tax_encoder = tax_encoder
 
     def __call__(self, target_labels):
         '''Transforms target labels into probability distributions in which the 
@@ -37,9 +36,10 @@ class LabelSmoothing:
 
         # Initializing new target
         batch_size = target_labels.shape[0]
-        new_target = [
-            (self.smoothing[5]/(self.classes[lvl]-1))* # Divide over classes
-            torch.ones((batch_size, self.classes[lvl]), device=utils.DEVICE)
+        new_target = [ # Divide over classes
+            (self.smoothing[5]/(self.tax_encoder.classes[lvl]-1))* 
+            torch.ones((batch_size, self.tax_encoder.classes[lvl]), 
+                       device=utils.DEVICE)
             for lvl in range(6)
         ]
 
@@ -58,12 +58,10 @@ class LabelSmoothing:
 
                 # Update to match current level
                 if i < len(lvl_probs)-1:
-                    lvl_probs[i]=self.inference_matrices[lvl-1]@lvl_probs[i].t()
-                    lvl_probs[i]=lvl_probs[i].t()
+                    lvl_probs[i] = (
+                        self.tax_encoder.infer_child_probs(lvl_probs[i], lvl)
+                    )
 
-                # Derive probability (weight) distributions (force sum to 1)
-                lvl_probs[i] = lvl_probs[i] / lvl_probs[i].sum(dim=-1, 
-                                                               keepdim=True) 
                 # When label is unknown (all nan), divide equally
                 lvl_probs[i] = torch.nan_to_num(lvl_probs[i], 
                                                 1 / lvl_probs[i].shape[-1])
@@ -73,11 +71,15 @@ class LabelSmoothing:
 
             if lvl < 5:
                 # Get probability dist at deeper level (inference matrix column)
-                probs = torch.zeros((target_labels.shape[0], 
-                                     self.classes[lvl+1]), device=utils.DEVICE)
-                probs[known] = ( # ... this represents subclass probabilities
-                    self.inference_matrices[lvl][:,target_labels[known,lvl]].t()
+                probs = torch.zeros(
+                    (target_labels.shape[0], self.tax_encoder.classes[lvl+1]), 
+                    device=utils.DEVICE
                 )
+                probs[known] = ( # Extract column to get subclass counts ...
+                    self.tax_encoder.inference_matrices[lvl]
+                        [:,target_labels[known,lvl]].t()
+                ) # ... and divide by sum to get probabilities
+                probs = probs / probs.sum(dim=1, keepdim=True) 
                 lvl_probs.append(probs)
 
         return new_target

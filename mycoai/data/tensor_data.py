@@ -139,7 +139,7 @@ class TensorData(torch.utils.data.Dataset):
             
             # Calculate effect of weighted sampler on parent levels...
             else: # ... by inferring what the parent distribution will be
-                dist = dist @ self.tax_encoder.inference_matrices[lvl].to('cpu')
+                dist = self.tax_encoder.infer_parent_probs(dist, lvl).to('cpu')
                 # Account for some samples that were unknown at sampler level...
                 unknown = (self.taxonomies[:,lvl]
                           [self.taxonomies[:,sampler.lvl]==utils.UNKNOWN_INT])
