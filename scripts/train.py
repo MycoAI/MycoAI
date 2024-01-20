@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 import random
+from RDP import RDPClassifier
 
 
 script_directory = Path(__file__).parent.absolute()
@@ -72,9 +73,10 @@ class TrainConfig:
 
 class Train:
 
-    def __init__(self, dnabarcoder_parser, deep_parser):
+    def __init__(self, dnabarcoder_parser, deep_parser, rdp_parser):
         self.dnabarcoder_parser = dnabarcoder_parser
         self.deep_parser = deep_parser
+        self.rdp_parser = rdp_parser
 
     def add_dnabarcoder_args(self):
         self.dnabarcoder_parser.add_argument('-i', '--input', required=True, help='the fasta file')
@@ -138,7 +140,13 @@ class Train:
         self.deep_parser.add_argument('--gpu', type=int, const=0, nargs='?', help='Use CUDA enabled GPU if available. The number following the argument indicates the GPU to use in a multi-GPU system', default=None)
         self.deep_parser.add_argument('--hyperparameters', type=str, help='Path to hyperparameters config file. Default is None', default=None)
 
-
+    def add_rdp_args(self):
+        self.rdp_parser.add_argument('-i', '--input', required=True, help='the fasta file')
+        self.rdp_parser.add_argument('-o', '--out',
+                            help='The folder name containing the model and associated files.')  # optional
+        self.rdp_parser.add_argument('-c', '--classification', help='the classification file in tab. format.')
+        self.rdp_parser.add_argument('-p', '--classificationpos', type=int, required=True, default=0,
+                            help='the classification position to load the classification.')
     def deep(self, args):
 
         hyperparameters = TrainConfig()
@@ -306,7 +314,16 @@ class Train:
                 LoggingWrapper.info(line)
             if (classification_file_name != args.classification):
                 Path(classification_file_name).unlink()
-            LoggingWrapper.info("Dnavabarcoder training finished.", color="green", bold=True)
+        LoggingWrapper.info("Dnabarcoder training finished.", color="green", bold=True)
 
 
+    def rdp(self, args):
+        '''
+        This function is used to train RDP, a bayseian classifier, for taxonomic classification of fungal ITS sequences.
+        :param args: the arguments of the command
+        '''
 
+        LoggingWrapper.info("Starting RDP training...", color="green", bold=True)
+        rdp_trainer = RDPClassifier()
+        rdp_trainer.train(args)
+        LoggingWrapper.info("RDP training finished.", color="green", bold=True)

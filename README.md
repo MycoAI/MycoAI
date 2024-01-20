@@ -389,10 +389,16 @@ result = DeepITSTrainer.test(model, test_data)
 ```
 
 ### Traditional ITS classifiers
-## Dnabarcoder
+#### Dnabarcoder
 The package includes a wrapper for the dnaBarcoder tool's prediction and classification. For more information on the tool, see [here](https://github.com/vuthuyduong/dnabarcoder).
+The dnabarcoder is added as a submodule. Therefore, to use it update the submodule by running the following command in the root directory of the repository:
 
-### Training
+```commandline
+git submodule update --init --recursive
+```
+    
+
+#### Training
 The training is performed with `train_dnabarcoder` subcommand by executing the following command in [scripts](./scripts) folder
 
     python -m  its_classifier train_dnabarcoder <subcommand args>
@@ -435,8 +441,8 @@ The `train_dnabarcoder` subcommand is implemenrted as a 3-step process:
 
 Step 1 and 3 are optional and are only executed if -unique_rank and -best options are set, respectively. 
 
-### Classification
-The clsssification is performed with `classify_dnabarcoder` subcommand by executing the following command in [scripts](./scripts) folder
+#### Classification
+The classification is performed with `classify_dnabarcoder` subcommand by executing the following command in [scripts](./scripts) folder
 
     python -m  its_classifier classify_dnabarcoder <subcommand args>
 

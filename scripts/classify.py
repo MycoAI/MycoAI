@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 from Bio import SeqIO
+from RDP import RDPClassifier
 
 script_directory = Path(__file__).parent.absolute()
 project_directory = script_directory.parent.absolute()
@@ -18,9 +19,10 @@ from loggingwrapper import LoggingWrapper
 
 class Classify:
 
-    def __init__(self, dnabarcoder_parser, deep_parser):
+    def __init__(self, dnabarcoder_parser, deep_parser,rdp_parser):
         self.dnabarcoder_parser = dnabarcoder_parser
         self.deep_parser = deep_parser
+        self.rdp_parser = rdp_parser
 
     def add_dnabarcoder_args(self):
         self.dnabarcoder_parser.add_argument('-i', '--input', required=True, help='the classified file.')
@@ -69,6 +71,11 @@ class Classify:
         self.deep_parser.add_argument('--gpu', type=int, const=0, nargs='?',
                                       help='Use CUDA enabled GPU if available. The number indicates the GPU to use',
                                       default=None)
+    def add_rdp_args(self):
+        self.rdp_parser.add_argument('-i', '--input', required=True, help='the fasta file')
+        self.rdp_parser.add_argument('-o', '--out',
+                            help='The folder name to save results. If not given, the results will be saved in the same folder as the input file.')  # optional
+        self.rdp_parser.add_argument('-c', '--classifier', required=True, help='the folder containing the model of the classifier.')
 
     def deep(self, args):
         deep_its_model = torch.load(args.load_model)
@@ -143,3 +150,13 @@ class Classify:
         for line in classify_result.stdout.splitlines():
             LoggingWrapper.info(line)
         LoggingWrapper.info("Classifying sequences using dnabarcoder complete.", color="green", bold=True)
+
+    def rdp(self, args):
+        '''
+        This function is used to classify sequences using RDP, a bayseian classifier.
+        :param args: the arguments of the command
+        '''
+        LoggingWrapper.info("Starting RDP classification...", color="green", bold=True)
+        rdp_trainer = RDPClassifier()
+        rdp_trainer.classify(args)
+        LoggingWrapper.info("RDP classification complete.", color="green", bold=True)

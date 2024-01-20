@@ -11,11 +11,12 @@ sys.path.append(str(project_directory))
 
 
 if __name__ == '__main__':
+    '''Predicts the taxonomies of sequences in file with specified method'''
 
     parser = argparse.ArgumentParser(prog='python its_classifier.py',
         description='Taxonomic classification of fungal ITS sequences.', usage="%(prog)s <positional arguments> [options]")
 
-    '''Predicts the taxonomies of sequences in file with specified method'''
+
 
     subparsers = parser.add_subparsers(dest='command')
 
@@ -35,13 +36,18 @@ if __name__ == '__main__':
     # Subparser for the "its" command
     classify_deep_parser = subparsers.add_parser('classify_deep', help='Classify fungal ITS sequences using deep learning')
 
+    train_rdp_parser = subparsers.add_parser('train_rdp', help='Train RDP, a bayseian classifier, for taxonomic classification of fungal ITS sequences.')
+    classify_rdp_parser = subparsers.add_parser('classify_rdp', help='Classify fungal ITS sequences using RDP, a bayseian classifier.')
 
-    trainer = Train(train_dnabarcoder_parser, train_deep_parser)
+
+    trainer = Train(train_dnabarcoder_parser, train_deep_parser, train_rdp_parser)
     trainer.add_dnabarcoder_args()
     trainer.add_deep_args()
-    classifier = Classify(classify_dnabarcoder_parser, classify_deep_parser)
+    trainer.add_rdp_args()
+    classifier = Classify(classify_dnabarcoder_parser, classify_deep_parser, classify_rdp_parser)
     classifier.add_dnabarcoder_args()
     classifier.add_deep_args()
+    classifier.add_rdp_args()
 
     args = parser.parse_args()
 
@@ -53,6 +59,10 @@ if __name__ == '__main__':
         classifier.deep(args)
     elif args.command == 'classify_dnabarcoder':
         classifier.dnabarcoder(args)
+    elif args.command == 'train_rdp':
+        trainer.rdp(args)
+    elif args.command == 'classify_rdp':
+        classifier.rdp(args)
     else:
         parser.print_help()
         exit(1)
