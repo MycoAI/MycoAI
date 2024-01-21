@@ -481,6 +481,44 @@ The column names in the header should be: `ID`,`ReferenceID`,`BLAST score`, `BLA
 ```python
 #TODO
 ```
+### RDP Classifier
+The package includes a wrapper for the RDP bayesian classifier. For more information on the tool, see [here](https://github.com/rdpstaff/classifier). The classifier can be downloaded from [here](https://sourceforge.net/projects/rdp-classifier/files/latest/download).
+Unzip the downloaded archive. Copy `classifier.jar` from the `dist` folder to the `RDP` directory of the package.
+
+The classifier is written in Java. Therefore, to use it, Java 8 or higher should be installed on the system. Otherwise, install Jva 8 in the package conda environment
+
+#### Training
+The training is performed with `train_rdp` subcommand by executing the following command in [scripts](./scripts) folder
+
+    python -m  its_classifier train_rdp <subcommand args>
+
+The arguments for `train_rdp` subcommand are as follows:
+
+| Argument                  | Required | Description                                                                                                                                                  | Values                                                                                                  |
+|---------------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| `-i` or `--input`         | Yes      | The path to the input fasta file.                                                                                                                          | `path`                                                                                                  |
+| `-o` or `--out`           | No       | The folder name containing the model and associated files.                                                                                                | `path`                                                                                                  |
+| `-c` or `--classification` | No       | The classification file in tabular format.                                                                                                                 | `path`                                                                                                  |
+| `-p` or `--classificationpos` | Yes   | The classification position to load the classification.                                                                                                   | `int`                                                                                                   |
+
+#### Classification
+The classification is performed with `classify_rdp` subcommand by executing the following command in [scripts](./scripts) folder
+
+    python -m  its_classifier classify_rdp <subcommand args>
+
+The arguments for `classify_rdp` subcommand are as follows:
+
+| Argument                      | Required | Description                                                                                                                                           | Values                                                                                                  |
+|-------------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| `-i` or `--input`             | Yes      | The path to the input fasta file.                                                                                                                    | `path`                                                                                                  |
+| `-o` or `--out`               | No       | The folder name to save results. If not given, the results will be saved in the same folder as the input file.                                       | `path`                                                                                                  |
+| `-c` or `--classifier`        | Yes      | The folder containing the model of the classifier.                                                                                                    | `path`                                                                                                  |
+
+#### Example
+```python
+#TODO
+```
+
 
 ## Performance evaluation
 

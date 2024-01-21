@@ -1,6 +1,9 @@
 import subprocess
 import sys
 from pathlib import Path
+from zipfile import ZipFile
+
+import requests
 
 from loggingwrapper import LoggingWrapper
 
@@ -13,6 +16,41 @@ import json
 
 class RDPClassifier():
 
+    def downloadClassifier(self):
+        rdpclassifierpath = str(Path(__file__).parent.absolute())
+        response = requests.get('https://sourceforge.net/projects/rdp-classifier/files/latest/download')
+
+        # Check if the request was successful (status code 200)
+        if response.status_code == 200:
+            zip_file_path = os.path.join(rdpclassifierpath, 'rdpclassifier.zip')
+
+            with open(zip_file_path, 'wb') as zip_file:
+                zip_file.write(response.content)
+
+            # Step 2: Extract the ZIP file
+            with ZipFile(zip_file_path, 'r') as zip_ref:
+                unzipped_dir = os.path.join(rdpclassifierpath, 'rdpclassifier_unzipped')
+                zip_ref.extractall(unzipped_dir)
+
+                # Step 3: Locate and move the classifier.jar file
+                classifier_path = os.path.join(unzipped_dir, 'dist', 'classifier.jar')
+
+                # Check if the file exists before moving
+                if os.path.exists(classifier_path):
+                    # Optionally, you can move the classifier.jar to a different directory
+                    destination_dir = rdpclassifierpath
+                    destination_path = os.path.join(destination_dir, 'classifier.jar')
+                    os.rename(classifier_path, destination_path)
+
+                    # Step 4: Remove the ZIP file and unzipped directory
+                    os.remove(zip_file_path)
+                    os.rmdir(unzipped_dir)
+                else:
+                    LoggingWrapper.error("The classifier.jar file was not found in the downloaded ZIP file.", color="red", bold=True)
+                    sys.exit(1)
+
+        else:
+            LoggingWrapper.error("Unable to download the file. Status code: " + str(response.status_code), color="red", bold=True)
     def GetBase(self, filename):
         return filename[:-(len(filename) - filename.rindex("."))]
 
@@ -396,72 +434,7 @@ class RDPClassifier():
         configfile.close()
 
 
-    def train(self, args):
-        fastafilename= args.input
-        classificationfilename=args.classification
-        classificationpos=args.classificationpos
-        rdpclassifierpath = str(Path(__file__).parent.absolute())
-        modelname=args.out
-        if (Path(rdpclassifierpath) / "classifier.jar").exists() == False:
-            LoggingWrapper.error("The classifier.jar is not found in the folder " + rdpclassifierpath + ".", color="red", bold=True)
-            sys.exit(1)
 
-        basefilename = self.GetBase(fastafilename)
-        # load seq records
-        seqrecords = list(SeqIO.parse(fastafilename, "fasta"))
-        # train the data using rdp model
-        trainseqids = self.GetSeqIDs(seqrecords)
-
-        # load taxonomic classifcation of the train dataset
-        species, genera, families, orders, classes, phyla, kingdoms, classifications, trainlabels, level = self.LoadClassification(
-            trainseqids, classificationfilename, classificationpos)
-
-        # save model
-        if modelname == None or modelname == "":
-            modelname = basefilename + "_rdp_classifier"
-            if level != "":
-                modelname = basefilename + "_" + level + "_rdp_classifier"
-        if os.path.isdir(modelname) == False:
-            os.system("mkdir " + modelname)
-        basename = modelname
-        if "/" in modelname:
-            basename = modelname[modelname.rindex("/") + 1:]
-        # basename=basefilename + "_" + level + "_rdp_classifier"
-        if "/" in basename:
-            basename = basename[len(basename) - basename.rindex("/"):]
-        # cp_result = subprocess.run("cp " + rdpclassifierpath + "/classifier.jar " + modelname + "/", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', check=True)
-        # if cp_result.returncode != 0:
-        #     LoggingWrapper.error("Error while copying classifier.jar.", color="red", bold=True)
-        #     for line in cp_result.stderr.splitlines():
-        #         LoggingWrapper.error(line)
-        #     sys.exit(cp_result.returncode)
-
-        # train the rdp classifier
-        rdpfastafilename = modelname + "/" + basefilename + ".rdp.fasta"
-        rdptaxaidfilename = modelname + "/" + basefilename + ".rdp.tid"
-
-        # generate the taxaid file for the rdp model
-        self.GenerateTaxaIDs(species, genera, families, orders, classes, phyla, kingdoms, rdptaxaidfilename)
-
-        # generate fasta file for the rdp model
-        classdict = self.GenerateRDFFastaFile(trainseqids, trainlabels, classifications, fastafilename, rdpfastafilename)
-
-        traincommand = "java -Xmx1g -jar " + rdpclassifierpath + "/classifier.jar train -o " + modelname + " -s " + rdpfastafilename + " -t " + rdptaxaidfilename
-        traincommand_res = subprocess.run(traincommand, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', check=True)
-        if traincommand_res.returncode != 0:
-            LoggingWrapper.error("Error while training the RDP classifier.", color="red", bold=True)
-            for line in traincommand_res.stderr.splitlines():
-                LoggingWrapper.error(line)
-            sys.exit(traincommand_res.returncode)
-        # save seqids for each classification
-        jsonfilename = modelname + "/" + basename + ".classes"
-        self.SaveClasses(jsonfilename, classdict)
-        # save config
-        configfilename = modelname + "/" + basename + ".config"
-        self.SaveConfig(configfilename, modelname, fastafilename, jsonfilename, classificationfilename, classificationpos,
-                   rdpfastafilename, rdptaxaidfilename)
-
-        LoggingWrapper.info("The classifier is saved in the folder " + modelname + ".", color="green", bold=True)
 
     def LoadConfig(self, modelname):
         if modelname[len(modelname) - 1] == "/":
@@ -522,6 +495,75 @@ class RDPClassifier():
                 seqid + "\t" + giventaxonname + "\t" + predictedname + "\t" + classification + "\t" + str(proba) + "\n")
             i = i + 1
         output.close()
+    def train(self, args):
+        fastafilename= args.input
+        classificationfilename=args.classification
+        classificationpos=args.classificationpos
+        rdpclassifierpath = str(Path(__file__).parent.absolute())
+        modelname=args.out
+        if (Path(rdpclassifierpath) / "classifier.jar").exists() == False:
+            LoggingWrapper.error("The classifier.jar is not found in the folder " + rdpclassifierpath + ".", color="red", bold=True)
+            sys.exit(1)
+
+        basefilename = self.GetBase(fastafilename)
+        # load seq records
+        seqrecords = list(SeqIO.parse(fastafilename, "fasta"))
+        # train the data using rdp model
+        trainseqids = self.GetSeqIDs(seqrecords)
+
+        # load taxonomic classifcation of the train dataset
+        species, genera, families, orders, classes, phyla, kingdoms, classifications, trainlabels, level = self.LoadClassification(
+            trainseqids, classificationfilename, classificationpos)
+
+        # save model
+        if modelname == None or modelname == "":
+            modelname = basefilename + "_rdp_classifier"
+            if level != "":
+                modelname = basefilename + "_" + level + "_rdp_classifier"
+        if os.path.isdir(modelname) == False:
+            os.system("mkdir " + modelname)
+        basename = modelname
+        if "/" in modelname:
+            basename = modelname[modelname.rindex("/") + 1:]
+        # basename=basefilename + "_" + level + "_rdp_classifier"
+        if "/" in basename:
+            basename = basename[len(basename) - basename.rindex("/"):]
+        # cp_result = subprocess.run("cp " + rdpclassifierpath + "/classifier.jar " + modelname + "/", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', check=True)
+        # if cp_result.returncode != 0:
+        #     LoggingWrapper.error("Error while copying classifier.jar.", color="red", bold=True)
+        #     for line in cp_result.stderr.splitlines():
+        #         LoggingWrapper.error(line)
+        #     sys.exit(cp_result.returncode)
+
+        # train the rdp classifier
+        rdpfastafilename = modelname + "/" + basefilename + ".rdp.fasta"
+        rdptaxaidfilename = modelname + "/" + basefilename + ".rdp.tid"
+
+        # generate the taxaid file for the rdp model
+        self.GenerateTaxaIDs(species, genera, families, orders, classes, phyla, kingdoms, rdptaxaidfilename)
+
+        # generate fasta file for the rdp model
+        classdict = self.GenerateRDFFastaFile(trainseqids, trainlabels, classifications, fastafilename, rdpfastafilename)
+
+        traincommand = "java -Xmx1g -jar " + rdpclassifierpath + "/classifier.jar train -o " + modelname + " -s " + rdpfastafilename + " -t " + rdptaxaidfilename
+        traincommand_res = subprocess.run(traincommand, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', check=True)
+        if traincommand_res.returncode != 0:
+            LoggingWrapper.error("Error while training the RDP classifier.", color="red", bold=True)
+            for line in traincommand_res.stderr.splitlines():
+                LoggingWrapper.error(line)
+            sys.exit(traincommand_res.returncode)
+        LoggingWrapper.info("The RDP classifier is trained.", color="green", bold=True)
+        for line in traincommand_res.stdout.splitlines():
+            LoggingWrapper.info(line)
+        # save seqids for each classification
+        jsonfilename = modelname + "/" + basename + ".classes"
+        self.SaveClasses(jsonfilename, classdict)
+        # save config
+        configfilename = modelname + "/" + basename + ".config"
+        self.SaveConfig(configfilename, modelname, fastafilename, jsonfilename, classificationfilename, classificationpos,
+                   rdpfastafilename, rdptaxaidfilename)
+
+        LoggingWrapper.info("The classifier is saved in the folder " + modelname + ".", color="green", bold=True)
     def classify(self, args):
         testfastafilename = args.input
         rdpclassifierpath = str(Path(__file__).parent.absolute())
@@ -541,7 +583,7 @@ class RDPClassifier():
         testseqids = self.GetSeqIDs(seqrecords)
 
         # load given taxonomic classifcation of the test dataset
-        testspecies, testgenera, testfamilies, testorders, testclasses, testphyla, testkingdoms, testclassifications, testlabels, rank = LoadClassification(
+        testspecies, testgenera, testfamilies, testorders, testclasses, testphyla, testkingdoms, testclassifications, testlabels, rank = self.LoadClassification(
             testseqids, classificationfilename, classificationpos)
 
         # run the model
@@ -560,6 +602,9 @@ class RDPClassifier():
             for line in testcommand_res.stderr.splitlines():
                 LoggingWrapper.error(line)
             sys.exit(testcommand_res.returncode)
+        LoggingWrapper.info("The sequences are classified.", color="green", bold=True)
+        for line in testcommand_res.stdout.splitlines():
+            LoggingWrapper.info(line)
         testseqids = self.GetSeqIDs(seqrecords)
         predlabels, probas, ranks = self.GetPredictedLabels(testseqids, rdpclassifiedfilename)
         # load ref class dict
