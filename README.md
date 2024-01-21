@@ -6,20 +6,25 @@ may not be up-to-date with the latest changes in the code. [Last update:
 Python package for classification of fungal ITS metabarcoding sequences. MycoAI 
 introduces a collection of deep neural classifiers and allows users to train
 their own. 
-<!-- FUTURE Traditional methods, such as BLAST (+ DNABarcoder) and RDPClassifier
+Traditional methods, such as Dnabarcoder and RDP classifier
 are also included. The package serves as a standardized comparison platform 
 that supports the user in picking the best-suitable classifier for the task at 
-hand. -->
+hand.
 
 # Installation
 Currently, the only way of using MycoAI is from source:
-    
-    git clone https://github.com/MycoAI/MycoAI
+```commandline
+ git clone https://github.com/MycoAI/MycoAI
+ git checkout using_escince_template
+```
+   
 
 You can install the specified requirements manually, or create a conda 
 environment with all the necessary dependencies using the command below. 
-
+```commandline
     conda env create -f environment.yml
+    conda activate mycoai
+```
 
 ## Requirements
 * Python version 3.8 or higher [[link](https://www.python.org/)]
