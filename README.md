@@ -15,7 +15,7 @@ hand.
 Currently, the only way of using MycoAI is from source:
 ```commandline
  git clone https://github.com/MycoAI/MycoAI
- git checkout using_escince_template
+ git checkout using_escience_template
 ```
    
 
@@ -393,8 +393,8 @@ plotter.classification_loss(history, model.target_levels)
 result = DeepITSTrainer.test(model, test_data)
 ```
 
-### Traditional ITS classifiers
-#### Dnabarcoder
+## Traditional ITS classifiers
+### Dnabarcoder
 The package includes a wrapper for the dnaBarcoder tool's prediction and classification. For more information on the tool, see [here](https://github.com/vuthuyduong/dnabarcoder).
 The dnabarcoder is added as a submodule. Therefore, to use it update the submodule by running the following command in the root directory of the repository:
 
@@ -482,7 +482,7 @@ The `classify_dnabarcoder` subcommand is implemented as a 2-step process:
 The search step is performed automatically if the input file is a FASTA. To skip the BLAST search step, the input file should be a TAB seperated file with the following columns: sequence ID, Reference sequence ID, BLAST score, BLAST similarity and BLAST coverage.
 The column names in the header should be: `ID`,`ReferenceID`,`BLAST score`, `BLAST sim`, `BLAST coverage`.
 
-#### Example
+### Example
 ```python
 #TODO
 ```
@@ -519,7 +519,7 @@ The arguments for `classify_rdp` subcommand are as follows:
 | `-o` or `--out`               | No       | The folder name to save results. If not given, the results will be saved in the same folder as the input file.                                       | `path`                                                                                                  |
 | `-c` or `--classifier`        | Yes      | The folder containing the model of the classifier.                                                                                                    | `path`                                                                                                  |
 
-#### Example
+### Example
 ```python
 #TODO
 ```
