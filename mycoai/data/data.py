@@ -109,26 +109,33 @@ class Data:
             print("No data labels have been imported.") 
             print("If the data is labelled, specify tax_parser in init.")
             tax_encoder = type('placeholder', (), 
-                               {'encode': lambda self, x: torch.zeros(1)})()
+                               {'encode': lambda _, x: torch.zeros(1),
+                                'encode_fast': 
+                                    (lambda _, x: 
+                                     torch.zeros((len(self.data), 1))),
+                                'train': False})()
         elif type(tax_encoder) == str:
-            tax_encoder = tax_encs[tax_encoder](self.data)
+            tax_encoder = tax_encs[tax_encoder](self)
 
-        # ENCODING        
-        # Loop through the data, encode sequences and labels 
-        sequences, taxonomies = [], []
-        for index, row in tqdm(self.data.iterrows()):
-            sequences.append(dna_encoder.encode(row['sequence']))
-            taxonomies.append(tax_encoder.encode(row))
-
-        if type(tax_encoder) == encoders.TaxonEncoder and tax_encoder.train:
-            tax_encoder.finish_training()
-
-        # Convert to tensors and store
-        sequences = torch.stack(sequences)
-        taxonomies = torch.stack(taxonomies)
+        # ENCODING (of sequences and their labels)
+        if (type(dna_encoder) == encoders.BytePairEncoder and 
+            not tax_encoder.train): # Check if fast encoding is available
+            taxonomies = tax_encoder.encode_fast(self)
+            sequences = dna_encoder.encode_fast(self)
+        else: # If not, iterrate over rows and encode row-by-row
+            sequences, taxonomies = [], []
+            for index, row in tqdm(self.data.iterrows()):
+                sequences.append(dna_encoder.encode(row['sequence']))
+                taxonomies.append(tax_encoder.encode(row))
+            if type(tax_encoder) == encoders.TaxonEncoder and tax_encoder.train:
+                tax_encoder.finish_training()
+            sequences = torch.stack(sequences)
+            taxonomies = torch.stack(taxonomies)
+        
+        # Create TensorData object
         data = TensorData(sequences, taxonomies, dna_encoder, tax_encoder, 
                           self.name)
-    
+        
         if utils.VERBOSE > 0 and self.labelled():
             data.labels_report() 
             data.unknown_labels_report() if tax_encoder is not None else 0

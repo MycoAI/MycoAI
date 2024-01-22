@@ -83,9 +83,20 @@ class BytePairEncoder(DNAEncoder):
         '''Encodes a single data row using the BPE encoder'''
         seq = re.sub('[^ACTG]', '?', sequence)
         encoding = self.sp.encode(seq)[:self.length-2] # Leave room for CLS/PAD
-        encoding = [utils.TOKENS[f'CLS']] + encoding + [utils.TOKENS['SEP']] 
+        encoding = [utils.TOKENS['CLS']] + encoding + [utils.TOKENS['SEP']] 
         encoding += (self.length-len(encoding))*[utils.TOKENS['PAD']] # Padding
         return torch.tensor(encoding, dtype=torch.long)
+
+    def encode_fast(self, data):
+        '''Encodes an entire MycoAI data object using the BPE encoder'''
+        seqs = data.data['sequence'].str.replace('[^ACTG]', '?', regex=True)
+        seqs = self.sp.encode(seqs.tolist()) # BPE encoding
+        seqs = [torch.tensor( # Add special tokens and convert to tensor
+            [utils.TOKENS['CLS']] + seq[:self.length-2] + [utils.TOKENS['SEP']], 
+            dtype=torch.long) for seq in seqs] 
+        seqs = torch.nn.utils.rnn.pad_sequence(seqs, # Stack and add padding
+                            batch_first=True, padding_value=utils.TOKENS['PAD'])
+        return seqs[:,:self.length]
 
     def get_config(self):
         return {'type':       utils.get_type(self),
@@ -221,7 +232,7 @@ class TaxonEncoder:
         List with number of known classes per taxonomic level'''
 
     def __init__(self, data):
-        self.lvl_encoders = self.initialize_labels(data)
+        self.lvl_encoders = self.initialize_labels(data.data)
         self.inference_matrices = self.initialize_inference_matrices() # Empty
         self.train = True
 
@@ -281,6 +292,21 @@ class TaxonEncoder:
                     probs = 1 / (m.shape[0] * m.shape[1])
                     self.inference_matrices[i-1] += probs
         
+        return torch.tensor(encoding, dtype=torch.int64)
+
+    def encode_fast(self, data):
+        '''Assigns integers to taxonomic level for entire MycoAI data object.'''
+
+        # Init to utils.UKNOWN_INT
+        data = data.data
+        encoding = utils.UNKNOWN_INT*np.ones((len(data),6), dtype=int) 
+        for i in range(6):
+            # Filter for only known taxonomic labels
+            known = data[utils.LEVELS[i]].isin(self.lvl_encoders[i].classes_)
+            encoding[known, i] = ( # Encode
+                self.lvl_encoders[i].transform(data[known][utils.LEVELS[i]])
+            )
+
         return torch.tensor(encoding, dtype=torch.int64)
     
     def decode(self, labels: np.ndarray, levels: list=utils.LEVELS):
