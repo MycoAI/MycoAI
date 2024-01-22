@@ -1,5 +1,6 @@
 '''Contains the DeepITSClassifier class for complete ITS classification models.'''
 
+import time
 import torch
 import numpy as np
 import pandas as pd
@@ -135,12 +136,16 @@ class DeepITSClassifier(torch.nn.Module):
         '''Classifies sequences in FASTA file, Data or TensorData object,
         returns a pandas DataFrame.'''
 
+        t0 = time.time()
         input_data = self._encode_input_data(input_data)
         predictions = self._predict(input_data)
         predictions = [pred_level.cpu().numpy() for pred_level in predictions]
         predictions = np.stack(predictions, axis=1)
         predictions = self.tax_encoder.decode(predictions)
+        t1 = time.time()
         
+        if utils.VERBOSE > 0:
+            print(f'Classification took {t1-t0} seconds.')
         classification = pd.DataFrame(predictions, columns=utils.LEVELS)
         classification[self.masked_levels] = utils.UNKNOWN_STR
         return classification

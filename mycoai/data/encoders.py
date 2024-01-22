@@ -282,15 +282,16 @@ class TaxonEncoder:
                 parent, child = encoding[-2], encoding[-1]
                 if parent != utils.UNKNOWN_INT and child != utils.UNKNOWN_INT:
                     m[child,parent] += 1 # Both known, add 1
-                elif parent != utils.UNKNOWN_INT and child == utils.UNKNOWN_INT:
-                    probs = 1/m.shape[0] # Only parent known, divide over childs
-                    m[:,parent] += probs
-                elif parent == utils.UNKNOWN_INT and child != utils.UNKNOWN_INT:
-                    probs = 1/m.shape[1] # Only child known, divide over parents
-                    m[child] += probs
-                else: # Both unknown, divide probabilities over entire matrix
-                    probs = 1 / (m.shape[0] * m.shape[1])
-                    self.inference_matrices[i-1] += probs
+                # NOTE the code below is currently inactivated
+                # elif parent != utils.UNKNOWN_INT and child == utils.UNKNOWN_INT:
+                #     probs = 1/m.shape[0] # Only parent known, divide over childs
+                #     m[:,parent] += probs
+                # elif parent == utils.UNKNOWN_INT and child != utils.UNKNOWN_INT:
+                #     probs = 1/m.shape[1] # Only child known, divide over parents
+                #     m[child] += probs
+                # else: # Both unknown, divide probabilities over entire matrix
+                #     probs = 1 / (m.shape[0] * m.shape[1])
+                #     self.inference_matrices[i-1] += probs
         
         return torch.tensor(encoding, dtype=torch.int64)
 
