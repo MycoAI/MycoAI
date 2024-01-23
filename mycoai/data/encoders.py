@@ -327,7 +327,7 @@ class TaxonEncoder:
         m = self.inference_matrices[parent_lvl] # Get inference matrix
         y = y.to(m.device)
         # Normalize rows, obtain conditional probabilities per child
-        m = m / m.sum(dim=1, keepdim=True) 
+        m = m / (m.sum(dim=1, keepdim=True) + 1e-7) 
         return y @ m
 
     def infer_child_probs(self, y, child_lvl):
@@ -335,7 +335,7 @@ class TaxonEncoder:
         m = self.inference_matrices[child_lvl-1] # Get inference matrix
         y = y.to(m.device)
         # Normalize columns, obtain conditional probabilities per parent
-        m = m / m.sum(dim=0)
+        m = m / (m.sum(dim=0) + 1e-7)
         return y @ m.t()
 
     def flat_label(self, y, lvl):
