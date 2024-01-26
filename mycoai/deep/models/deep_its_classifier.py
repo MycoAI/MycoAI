@@ -130,7 +130,7 @@ class DeepITSClassifier(torch.nn.Module):
         if len(self.fcn) > 0:
             for i in range(0, ((self.bottleneck_index+1)*2)-1):
                 x = self.fcn[i](x)
-        return x       
+        return x     
 
     def classify(self, input_data):
         '''Classifies sequences in FASTA file, Data or TensorData object,
@@ -197,7 +197,8 @@ class DeepITSClassifier(torch.nn.Module):
             input_data = data.Data(input_data, tax_parser=None, 
                                    allow_duplicates=True)
         if type(input_data) == data.Data:
-            input_data = input_data.encode_dataset(self.dna_encoder)
+            input_data = input_data.encode_dataset(self.dna_encoder,
+                                                   self.tax_encoder)
         if type(input_data) != data.TensorData:
             raise ValueError("Input_data should be a FASTA filepath, " + 
                              "Data or TensorData object.")
@@ -217,6 +218,18 @@ class DeepITSClassifier(torch.nn.Module):
                 x = x.to(utils.DEVICE)
                 latent_repr.append(self._forward_latent(x)) # Forward pass
         return torch.cat(latent_repr).cpu().numpy() # Combine batches
+
+    def multi_to_infer_sum(self):
+        '''Replaces the MultiHead output with InferSum, using the species-level
+        MultiHead output as a base.'''
+
+        if type(self.output) != mmo.MultiHead:
+            raise TypeError('self.output not of type MultiHead')
+
+        new_head = mmo.InferSum(self.classes, self.tax_encoder, 'species')
+        new_head.fc1 = self.output.output[5]
+        new_head = new_head.to(utils.DEVICE)
+        self.output = new_head
 
     def get_config(self):
         '''Returns configuration dictionary of this instance.'''

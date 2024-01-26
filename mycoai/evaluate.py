@@ -56,8 +56,10 @@ class Evaluator:
         results = {}
         for m in metrics:
             for lvl in levels:
+                # Only consider samples that are known in the reference
+                known = self.true[lvl] != utils.UNKNOWN_STR
                 name = f'{m}|test|{lvl}'
-                value = metrics[m](self.true[lvl], self.pred[lvl])
+                value = metrics[m](self.true[known][lvl], self.pred[known][lvl])
                 results[name] = value
 
         self.wandb_run.log(results, step=0)
