@@ -1,8 +1,5 @@
-data/*
 *pycache*
-/src/testing.py
 results*
-deathcap*
 TODO
 wandb*
 scripts/experiments*
