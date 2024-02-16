@@ -37,10 +37,3 @@ train = train_data.encode_dataset(dna_encoder,
 valid_data.encode_dataset(dna_encoder, 
                           train.tax_encoder, 
                           export_path=f'/data/luuk/{name}_bpe_valid.pt')
-
-# 4D encoding (for CNN)
-train = train_data.encode_dataset('4d', 
-                                  export_path=f'/data/luuk/{name}_4d.pt') 
-valid_data.encode_dataset('4d', 
-                          train.tax_encoder, 
-                          export_path=f'/data/luuk/{name}_4d_valid.pt')
