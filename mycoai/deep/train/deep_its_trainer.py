@@ -165,24 +165,24 @@ class DeepITSTrainer:
         wandb_run.config.update({'num_params': params})
         if epochs > 1:
             wandb_run.unwatch(model)
-        wandb_api = wandb.Api()
-        wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
-        model.train_ref = wandb_id
-        run = wandb_api.run(wandb_id)
-        history = run.history(pandas=True)
-        DeepITSTrainer.wandb_learning_curves(wandb_run, history, metrics, 
-                                             valid_data is not None)
+        # wandb_api = wandb.Api()
+        # wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
+        # model.train_ref = wandb_id
+        # run = wandb_api.run(wandb_id)
+        # history = run.history(pandas=True)
+        # DeepITSTrainer.wandb_learning_curves(wandb_run, history, metrics, 
+        #                                      valid_data is not None)
         wandb_run.finish(quiet=True)
         
-        if utils.VERBOSE > 0:
-            print("Training finished, log saved to wandb (see above).")
-            print("Final accuracy scores:\n---------------------")
-            if valid_data is not None:
-                DeepITSTrainer.final_report(history, 'valid')
-            else:
-                DeepITSTrainer.final_report(history, 'train')
+        # if utils.VERBOSE > 0:
+        #     print("Training finished, log saved to wandb (see above).")
+        #     print("Final accuracy scores:\n---------------------")
+        #     if valid_data is not None:
+        #         DeepITSTrainer.final_report(history, 'valid')
+        #     else:
+        #         DeepITSTrainer.final_report(history, 'train')
         
-        return model, history
+        return model # , history # NOTE THis affects the training scripts!
     
     @staticmethod
     def validate(model, data, metrics, ignore_unknowns=True):

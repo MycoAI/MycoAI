@@ -216,7 +216,7 @@ class DeepITSClassifier(torch.nn.Module):
         with torch.no_grad():
             for (x,y) in dataloader: # Loop through batches
                 x = x.to(utils.DEVICE)
-                latent_repr.append(self._forward_latent(x)) # Forward pass
+                latent_repr.append(self._forward_latent(x).cpu()) # Forward pass
         return torch.cat(latent_repr).cpu().numpy() # Combine batches
 
     def multi_to_infer_sum(self):

@@ -202,7 +202,7 @@ class KmerSpectrum(KmerEncoder):
         for i in range(0, len(seq)-self.k+1, self.stride): # Count
             freqs[self.map[seq[i:i+self.k]]] += 1
         if self.normalize: # Normalize
-            freqs = freqs/freqs.sum()
+            freqs = freqs/(freqs.sum()+1e-7)
         return torch.tensor([list(freqs)], dtype=torch.float32)
 
     def get_config(self):
@@ -333,6 +333,7 @@ class TaxonEncoder:
     def infer_child_probs(self, y, child_lvl):
         '''Calculates probabilities for children given parent probabilities'''
         m = self.inference_matrices[child_lvl-1] # Get inference matrix
+        m = torch.where(m != 0, 1.0, m) # TODO
         y = y.to(m.device)
         # Normalize columns, obtain conditional probabilities per parent
         m = m / (m.sum(dim=0) + 1e-7)

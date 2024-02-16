@@ -1,6 +1,6 @@
-'''Contains constants and helper functions to support DeathCap.'''
+'''Contains constants and helper functions to support MycoAI.'''
 
-import git
+# import git
 import torch
 import warnings
 import wandb
@@ -17,7 +17,7 @@ LEVELS = ['phylum', 'class', 'order', 'family', 'genus', 'species']
 UNKNOWN_STR = '?'
 UNKNOWN_INT = 9999999
 PRED_BATCH_SIZE = 64
-MAX_PER_EPOCH = 500000
+MAX_PER_EPOCH = 250000
 MIXED_PRECISION = True
 WANDB_PROJECT = 'ITS Classification'
 MAX_LEN = 5000 # Max length of positional encodings transformers
@@ -113,10 +113,10 @@ def get_loss_config(loss):
 
 def get_general_config():
     '''Gets overall configuration data'''
-    repo = git.Repo(search_parent_directories=True)
+    # repo = git.Repo(search_parent_directories=True)
     return {'device':           DEVICE,
             'mixed_precision':  MIXED_PRECISION,
-            'git_commit':       repo.head.object.hexsha,
+            # 'git_commit':       repo.head.object.hexsha,
             'max_per_epoch':    MAX_PER_EPOCH}
 
 def remove_file(path):
