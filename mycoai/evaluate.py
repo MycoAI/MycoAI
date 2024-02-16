@@ -240,7 +240,7 @@ class Evaluator:
         data['Dim 2'] = latent_repr[:,1].tolist()
 
         fig = px.scatter(data, x='Dim 1', y='Dim 2',hover_data=data.columns,
-                        title=f'Latent space', color=color_by)
+                         color=color_by)
 
         fig.write_html('temp.html', auto_play=False)
         table = wandb.Table(columns=['plotly_figure'])
