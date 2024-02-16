@@ -14,13 +14,13 @@ def counts_barchart(dataprep, level='phylum', id=''):
     counts = data.groupby(level, as_index=False)['id'].count().sort_values('id', 
                                                                 ascending=False)
     ax = counts.plot.bar(ylabel='# sequences', xlabel=level, width=1, 
-                         color='#636EFA', figsize=(7,4), legend=False)
+                         color='#636EFA', figsize=(6,3), legend=False)
     ax.set_xticklabels([])
     ax.set_xticks([])
     ax.set_yscale('log')
     id = '_' + id if len(id) > 0 else ''
     plt.tight_layout()
-    plt.savefig(utils.OUTPUT_DIR + level + '_counts' + id + '.png')
+    plt.savefig(utils.OUTPUT_DIR + level + '_counts' + id + '.pdf')
     plt.close()
 
 def counts_boxplot(dataprep, id=''):
@@ -48,7 +48,8 @@ def counts_sunburstplot(dataprep, id=''):
     counts = dataprep.data.groupby(utils.LEVELS, as_index=False).count()
     fig = px.sunburst(counts, path=utils.LEVELS, values='sequence')
     id = '_' + id if len(id) > 0 else ''
-    pio.write_image(fig, utils.OUTPUT_DIR + "sunburst" + id + ".png", scale=4)
+    fig.update_layout(width=500, height=500, margin = dict(t=0, l=0, r=0, b=0))
+    pio.write_image(fig, utils.OUTPUT_DIR + "sunburst" + id + ".pdf", scale=1)
 
 def classification_learning_curve(history, metric_name, levels, 
                                   show_valid=True, show_train=False):
