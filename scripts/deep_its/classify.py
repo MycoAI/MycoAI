@@ -7,8 +7,7 @@ def classify(fasta_filepath, output_filepath=utils.OUTPUT_DIR+'prediction.csv',
     '''Predicts the taxonomies of sequences in file with specified method'''
     
     utils.set_device(device)
-    deep_its_model = torch.load(model)
-    deep_its_model.to(utils.DEVICE)
+    deep_its_model = torch.load(model, map=utils.DEVICE)
     prediction = deep_its_model.classify(fasta_filepath)
     prediction.to_csv(output_filepath)
 
