@@ -282,16 +282,6 @@ class TaxonEncoder:
                 parent, child = encoding[-2], encoding[-1]
                 if parent != utils.UNKNOWN_INT and child != utils.UNKNOWN_INT:
                     m[child,parent] += 1 # Both known, add 1
-                # NOTE the code below is currently inactivated
-                # elif parent != utils.UNKNOWN_INT and child == utils.UNKNOWN_INT:
-                #     probs = 1/m.shape[0] # Only parent known, divide over childs
-                #     m[:,parent] += probs
-                # elif parent == utils.UNKNOWN_INT and child != utils.UNKNOWN_INT:
-                #     probs = 1/m.shape[1] # Only child known, divide over parents
-                #     m[child] += probs
-                # else: # Both unknown, divide probabilities over entire matrix
-                #     probs = 1 / (m.shape[0] * m.shape[1])
-                #     self.inference_matrices[i-1] += probs
         
         return torch.tensor(encoding, dtype=torch.int64)
 
@@ -320,6 +310,12 @@ class TaxonEncoder:
         return decoding
     
     def finish_training(self):
+        for i in range(5):
+            m = torch.zeros_like(self.inference_matrices[i])
+            # Select most occurring parent per child
+            parents = torch.argmax(self.inference_matrices[i], 1, True)
+            m = m.scatter_(1, parents, 1)
+            self.inference_matrices[i] = m
         self.train = False
 
     def infer_parent_probs(self, y, parent_lvl):
@@ -333,7 +329,6 @@ class TaxonEncoder:
     def infer_child_probs(self, y, child_lvl):
         '''Calculates probabilities for children given parent probabilities'''
         m = self.inference_matrices[child_lvl-1] # Get inference matrix
-        m = torch.where(m != 0, 1.0, m) # TODO
         y = y.to(m.device)
         # Normalize columns, obtain conditional probabilities per parent
         m = m / (m.sum(dim=0) + 1e-7)
