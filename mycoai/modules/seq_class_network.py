@@ -1,19 +1,20 @@
-'''Contains the DeepITSClassifier class for complete ITS classification models.'''
+'''Contains the SeqClassNetwork class for ITS classification models.'''
 
 import time
 import torch
 import numpy as np
 import pandas as pd
 from mycoai import utils, data
-import mycoai.deep.models.output_heads as mmo
-from mycoai.deep.models.transformers import BERT, EncoderDecoder
+import mycoai.modules.output_heads as mmo
+from mycoai.modules.transformers import BERT, EncoderDecoder
 
-class DeepITSClassifier(torch.nn.Module): 
-    '''Fungal taxonomic classification model based on ITS sequences. 
-    Supports several architecture variations.'''
+class SeqClassNetwork(torch.nn.Module): 
+    '''Performs taxonomic classification based on DNA sequences. It is a wrapper
+    class that stores encoder objects and adds an output layer as well as other 
+    application-related functionalities to a base architecture.'''
 
     def __init__(self, base_arch, dna_encoder, tax_encoder, fcn_layers=[], 
-                 dropout=0, output='infer_parent', max_level='species',
+                 dropout=0, output='multi', max_level='species',
                  chained_config=[False,True,True]):
         '''Creates network based on specified archticture and encoders
 
@@ -133,11 +134,12 @@ class DeepITSClassifier(torch.nn.Module):
         return x     
 
     def classify(self, input_data):
-        '''Classifies sequences in FASTA file, Data or TensorData object,
+        '''Classifies sequences in FASTA file, Data, or TensorData object, 
         returns a pandas DataFrame.'''
 
         t0 = time.time()
-        input_data = self._encode_input_data(input_data)
+        self.eval()
+        input_data, ids = self._encode_input_data(input_data, return_ids=True)
         predictions = self._predict(input_data)
         predictions = [pred_level.cpu().numpy() for pred_level in predictions]
         predictions = np.stack(predictions, axis=1)
@@ -146,7 +148,9 @@ class DeepITSClassifier(torch.nn.Module):
         
         if utils.VERBOSE > 0:
             print(f'Classification took {t1-t0} seconds.')
-        classification = pd.DataFrame(predictions, columns=utils.LEVELS)
+        classification = np.concatenate((ids, predictions), 1)
+        classification = pd.DataFrame(classification, 
+                                      columns=['id'] + utils.LEVELS)
         classification[self.masked_levels] = utils.UNKNOWN_STR
         return classification
     
@@ -191,23 +195,33 @@ class DeepITSClassifier(torch.nn.Module):
         else:
             return predictions
         
-    def _encode_input_data(self, input_data):
+    def _encode_input_data(self, input_data, return_ids=False):
         '''Encodes a FASTA file/Data object into TensorData object.'''
+
+        ids = None
         if type(input_data) == str:
             input_data = data.Data(input_data, tax_parser=None, 
                                    allow_duplicates=True)
         if type(input_data) == data.Data:
+            ids = input_data.data['id'].values
             input_data = input_data.encode_dataset(self.dna_encoder,
                                                    self.tax_encoder)
-        if type(input_data) != data.TensorData:
+        if type(input_data) == data.TensorData:
+            ids = np.array(['']*len(input_data)) if ids is None else ids
+        else:
             raise ValueError("Input_data should be a FASTA filepath, " + 
                              "Data or TensorData object.")
-        return input_data
+        
+        if return_ids:
+            return input_data, np.expand_dims(ids, axis=1)
+        else:
+            return input_data
         
     def latent_space(self, input_data):
         '''Extracts latent space for given input data'''
 
-        # Data processing        
+        # Data processing
+        self.eval()        
         input_data = self._encode_input_data(input_data)
         dataloader = torch.utils.data.DataLoader(input_data, shuffle=False,
                                                batch_size=utils.PRED_BATCH_SIZE)

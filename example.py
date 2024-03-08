@@ -1,41 +1,38 @@
-'''Example script'''
+'''Example script that demonstrates how to use the MycoAI package'''
 
 import torch
-from mycoai import data, utils
+from mycoai import utils
+from mycoai.data import Data
 from mycoai.evaluate import Evaluator
-from mycoai.deep.models import DeepITSClassifier
-from mycoai.deep.models import ResNet
-from mycoai.deep.train import DeepITSTrainer
+from mycoai.modules import SeqClassNetwork, BERT
+from mycoai.train import SeqClassTrainer, CrossEntropyLoss
 
 # Some settings
-utils.set_output_dir('results') # Create results directory, save output there
-# utils.set_device('cpu') # To specify CPU/GPU use 
+# utils.set_device('cpu') # Uncomment to force CPU use 
 
-# Data import & preprocessing
-train_data = data.Data('test1.fasta')
-train_data = train_data.class_filter('species', min_samples=5)
-train_data = train_data.sequence_length_filter()
-train_data = train_data.sequence_quality_filter()
-train_data, valid_data = train_data.encode_dataset('4d', valid_split=0.2)
+# Training data import & preprocessing
+train_data = Data('data/trainset_valid.fasta')
+train_data = train_data.sequence_length_filter(tolerance=4)
+train_data = train_data.sequence_quality_filter(tolerance=0.05)
+train_data, valid_data = train_data.train_valid_split(0.2)
 
-# Use encoding scheme from train_data on the test set
-test_data = data.Data('test2.fasta', allow_duplicates=True)
-test_data = test_data.encode_dataset(dna_encoder=train_data.dna_encoder,
-                                     tax_encoder=train_data.tax_encoder)
+# Encoding the datasets, use encoders from training data for validation data
+train_data = train_data.encode_dataset('bpe') # Byte Pair Encoding
+valid_data = valid_data.encode_dataset(train_data.dna_encoder, 
+                                       train_data.tax_encoder)
 
-# Model definition
-arch = ResNet([2,2,2,2]) # = ResNet18
-# This model will have a single output head and make genus-level predictions
-model = DeepITSClassifier(arch, train_data.dna_encoder, train_data.tax_encoder,  
-                          fcn_layers=[128,20,64])
+# Model = encoders + base architecture + output layer
+arch = BERT(train_data.dna_encoder.vocab_size) # Base architecture
+model = SeqClassNetwork(arch, train_data.dna_encoder, train_data.tax_encoder,
+                        output='multi') # Multi-head output
 
-# Train (optionally with weighted loss/sampling) 
-# sampler = train_data.weighted_sampler('genus')
-# loss_function = train_data.weighted_loss(torch.nn.CrossEntropyLoss, 
-#                                          sampler=sampler)
-model, history = DeepITSTrainer.train(model, train_data, valid_data, 100)
+# Train the network (with weighted loss)
+loss = train_data.weighted_loss(CrossEntropyLoss, strength=0.5)
+model, history = SeqClassTrainer.train(model, train_data, valid_data, loss=loss)
+torch.save(model, 'model.pt') # Export model for later use
 
 # Make a prediction on the test set
-classification = model.predict(test_data)
+test_data = Data('data/test1.fasta', allow_duplicates=True)
+classification = model.classify(test_data)
 evaluator = Evaluator(classification, test_data, model)
 evaluator.test()

@@ -1,8 +1,8 @@
 import torch
 from mycoai import utils
-from mycoai.deep.train import DeepITSTrainer
-from mycoai.deep.train.loss import CrossEntropyLoss
-from mycoai.deep.models import BERT, DeepITSClassifier
+from mycoai.train import SeqClassTrainer
+from mycoai.train.loss import CrossEntropyLoss
+from mycoai.modules import BERT, SeqClassNetwork
 from mycoai.data import Data, TensorData
 from mycoai.evaluate import Evaluator
 
@@ -25,13 +25,13 @@ for label_smoothing in smoothing:
     name = f'MycoAI-multi LS {" ".join([str(s) for s in label_smoothing])}'
 
     arch = BERT(train.dna_encoder.vocab_size, d_model=256, d_ff=512, N=6)
-    model = DeepITSClassifier(arch, train.dna_encoder, train.tax_encoder, 
+    model = SeqClassNetwork(arch, train.dna_encoder, train.tax_encoder, 
                               output=output)
 
     loss = train.weighted_loss(CrossEntropyLoss, strength=0.5)
     optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     try:
-        model = DeepITSTrainer.train(model, train, valid, 50, loss,
+        model, _ = SeqClassTrainer.train(model, train, valid, 50, loss,
             levels=[1,1,1,1,1,1], optimizer=optim, 
             label_smoothing=label_smoothing, wandb_name=name)
         

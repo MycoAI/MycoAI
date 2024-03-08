@@ -10,10 +10,11 @@ def classify(fasta_filepath, output_filepath=utils.OUTPUT_DIR+'prediction.csv',
     deep_its_model = torch.load(model, map_location=utils.DEVICE)
     prediction = deep_its_model.classify(fasta_filepath)
     prediction.to_csv(output_filepath)
+    print(f"Classification saved to {output_filepath}")
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(prog='python classify.py',
+    parser = argparse.ArgumentParser(prog='python -m scripts.classify',
         description='Taxonomic classification of fungal ITS sequences using a\
             deep neural network.')
     
@@ -26,11 +27,11 @@ if __name__ == '__main__':
         nargs=1,
         help='Where to save the output to (default is prediction.csv).')
     
-    parser.add_argument('--load_model', 
+    parser.add_argument('--model', 
         default=['models/MycoAI-multi-HLS.pt'],
         type=str,
         nargs=1,
-        help="Path to saved DeepITSClassifier Pytorch model (default is \
+        help="Path to saved SeqClassNetwork Pytorch model (default is \
               models/MycoAI-multi-HLS.pt).")
     
     parser.add_argument('--device', 
@@ -42,4 +43,4 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     classify(args.fasta_filepath, output_filepath=args.out[0], 
-             model=args.load_model[0], device=args.device[0])
+             model=args.model[0], device=args.device[0])

@@ -1,4 +1,4 @@
-'''ITS sequence data reading, preprocessing, encoding, and writing'''
+'''Sequence data reading, preprocessing, encoding, and writing'''
 
 import scipy
 import torch
@@ -14,13 +14,16 @@ from Bio import SeqIO
 
 
 class Data: 
-    '''ITS data preprocessor and container
+    '''Data container that parses and filters sequence data and encodes it into 
+    the network-readable TensorData format.
     
     Attributes
     ----------
     data: pd.DataFrame
         Holds dataframe containing taxonomies and sequences, with columns 'id',
         'phylum', 'class', 'order', 'genus', 'family', 'species', and 'sequence'
+    name: str
+        Name of dataset.
     '''
 
     def __init__(self, filepath, tax_parser='unite', allow_duplicates=False,
@@ -205,7 +208,7 @@ class Data:
 
         # Retrieving taxonomies
         fasta_header = fasta_header.split('|')
-        sh = fasta_header[2]
+        id = fasta_header[0]
         taxonomy = fasta_header[1] # Retrieve taxonomy data      
         taxonomy, species = taxonomy.split(';s__')
         taxonomy, genus = taxonomy.split(';g__')
@@ -213,7 +216,7 @@ class Data:
         taxonomy, order = taxonomy.split(';o__')
         taxonomy, classs = taxonomy.split(';c__')
         taxonomy, phylum = taxonomy.split(';p__')
-        data_row = [sh, phylum, classs, order, family, genus, species]
+        data_row = [id, phylum, classs, order, family, genus, species]
 
         return self.unite_label_preprocessing(data_row)
 

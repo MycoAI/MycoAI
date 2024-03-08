@@ -2,20 +2,21 @@ name: mycoai
 channels:
   - plotly
   - pytorch
-  - anaconda
   - conda-forge
+  - anaconda
   - defaults
 dependencies:
   - _libgcc_mutex=0.1=main
   - _openmp_mutex=5.1=1_gnu
   - appdirs=1.4.4=pyh9f0ad1d_0
+  - biopython=1.79=py38h497a2fe_1
   - blas=1.0=mkl
   - bottleneck=1.3.5=py38h7deecbd_0
   - brotli=1.0.9=h9c3ff4c_4
   - brotlipy=0.7.0=py38h27cfd23_1003
   - bzip2=1.0.8=h7b6447c_0
-  - ca-certificates=2023.7.22=hbcca054_0
-  - certifi=2023.7.22=pyhd8ed1ab_0
+  - ca-certificates=2023.11.17=hbcca054_0
+  - certifi=2023.11.17=pyhd8ed1ab_0
   - cffi=1.15.1=py38h5eee18b_3
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
   - click=8.1.7=unix_pyh707e725_0
@@ -104,7 +105,7 @@ dependencies:
   - numpy-base=1.24.3=py38h060ed82_1
   - openh264=2.1.1=h4ff587b_0
   - openjpeg=2.4.0=h3ad879b_0
-  - openssl=3.0.11=h7f8727e_2
+  - openssl=3.0.12=h7f8727e_0
   - packaging=23.2=pyhd8ed1ab_0
   - pandas=2.0.3=py38h1128e8f_0
   - pathtools=0.1.2=py_1
@@ -127,6 +128,7 @@ dependencies:
   - python-dateutil=2.8.2=pyhd3eb1b0_0
   - python-kaleido=0.2.1=pyhd8ed1ab_0
   - python-tzdata=2023.3=pyhd3eb1b0_0
+  - python_abi=3.8=2_cp38
   - pytorch=1.12.1=py3.8_cuda11.3_cudnn8.3.2_0
   - pytorch-mutex=1.0=cuda
   - pytz=2023.3.post1=py38h06a4308_0

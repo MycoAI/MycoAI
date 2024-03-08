@@ -1,4 +1,4 @@
-'''Evaluation and analysis of ITS classification algorithms.'''
+'''Evaluation and analysis of sequence classification algorithms.'''
 
 import wandb
 import sklearn
@@ -67,13 +67,26 @@ class Evaluator:
         classifier = self.wandb_run.config.get('type', 0)
         info = {'Dataset': self.wandb_run.config['testset_name']}
         info = {'Classifier': classifier, **info} if classifier != 0 else info
-        results = {
+        results = pd.DataFrame({
             **info,
             **{key:[results[key]] for key in results}
-        }
+        })
 
-        return pd.DataFrame(results)
+        if utils.VERBOSE > 0:
+            self.test_report(results, metrics)
+        return results
     
+    def test_report(self, results, metrics):
+        '''Prints results from test method.'''
+        
+        table = []
+        for m in metrics:
+            table.append([m] + list(
+                results[[f'{m}|test|{lvl}' for lvl in utils.LEVELS]].values[0]
+            ))
+        table = pd.DataFrame(table, columns=[['Metric'] + utils.LEVELS])
+        print(table)
+
     def metrics_bars(self, results, metrics, levels):
         '''Plots evaluation results in custom chart on WandB'''
         for m in metrics:

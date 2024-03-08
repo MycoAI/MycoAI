@@ -1,6 +1,11 @@
+'''For training neural networks to perform taxonomic classification of 
+biological sequences.'''
+
 import wandb
-from mycoai.deep.train.deep_its_trainer import DeepITSTrainer
-from mycoai.deep.train.masked_language_modeling import MLMTrainer
+from .seq_class_trainer import SeqClassTrainer
+from .masked_language_modeling import MLMTrainer
+from .label_smoothing import LabelSmoothing
+from .loss import CrossEntropyLoss
 
 class LrSchedule:
     '''Linearly increases the learning rate for the first warmup_steps, then

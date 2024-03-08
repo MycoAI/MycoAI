@@ -5,7 +5,7 @@ import torch.utils.data as tud
 from tqdm import tqdm
 import wandb
 from mycoai import utils
-from mycoai.deep import train
+from mycoai import train
 
 class MLMTrainer:
     '''Masked Language Modelling: training a network to predict the value of

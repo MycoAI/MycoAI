@@ -1,11 +1,11 @@
-'''Several architectures that handle ITS data. Must output a flat tensor.'''
+'''Several CNN architectures that handle ITS data. Must output a flat tensor.'''
 
 import torch
 from mycoai import utils
 
 class SimpleCNN(torch.nn.Module):
     
-    def __init__(self, kernel, conv_layers, in_channels=4, pool_size=3):
+    def __init__(self, kernel=5, conv_layers=[5,10], in_channels=1, pool_size=2):
         '''A simple CNN architecture with conv, batchnorm and maxpool layers'''
         super().__init__()
 

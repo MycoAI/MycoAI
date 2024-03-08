@@ -1,3 +1,6 @@
+'''Deep learning based (fungal ITS) taxonomic sequence classification 
+development platform.'''
+
 import wandb
 from mycoai import utils
 
@@ -5,4 +8,4 @@ from mycoai import utils
 utils.set_device('cuda')
 
 # Set up weights & biases
-wandb.login('allow', key='07c4f4b038b577ca5aa830979d6943aecd9ebec4')
+wandb.login('allow')

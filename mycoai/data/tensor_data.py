@@ -11,9 +11,9 @@ class TensorData(torch.utils.data.Dataset):
     Attributes
     ----------
     sequences: torch.Tensor
-        [n,4,max_length]-dimensional Tensor containing encoded sequence data
+        Tensor containing encoded sequence data
     taxonomies: torch.Tensor
-        [n,6]-dimensional Tensor with encoded taxonomic labels (on 6 levels)
+        Tensor with encoded taxonomic labels (on 6 levels)
     dna_encoder: DNAEncoder
         Class that was used to generate the sequences tensor
     tax_encoder: 

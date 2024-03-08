@@ -6,23 +6,24 @@ import numpy as np
 import torch.utils.data as tud
 from tqdm import tqdm
 from mycoai import utils
-from mycoai.deep import train
-from mycoai.deep.train import weight_schedules as ws
-from mycoai.deep.train.label_smoothing import LabelSmoothing
-from mycoai.deep.train.loss import CrossEntropyLoss
+from mycoai import train
+from mycoai.train import weight_schedules as ws
+from mycoai.train.label_smoothing import LabelSmoothing
+from mycoai.train.loss import CrossEntropyLoss
 
 
 mean = lambda tensor, weights: (tensor @ weights) / weights.sum()
 
 
-class DeepITSTrainer:
+class SeqClassTrainer:
     '''Multi-class classification (for multiple taxonomic levels)'''
 
     @staticmethod
-    def train(model, train_data, valid_data=None, epochs=100, loss=None,
+    def train(model, train_data, valid_data=None, epochs=50, loss=None,
               batch_size=64, sampler=None, optimizer=None, 
-              metrics=utils.EVAL_METRICS, levels=['species'], warmup_steps=None,
-              label_smoothing=None, wandb_config={}, wandb_name=None):
+              metrics=utils.EVAL_METRICS, levels=utils.LEVELS,
+              warmup_steps=None, label_smoothing=[0.02,0.02,0.02,0.02,0.02,0], 
+              wandb_config={}, wandb_name=None):
         '''Trains a neural network to classify ITS sequences
   
         Parameters
@@ -34,7 +35,7 @@ class DeepITSTrainer:
         valid_data: mycoai.data.TensorData
             Preprocessed dataset containing ITS sequences for validation   
         epochs: int
-            Number of training iterations
+            Number of training iterations (default is 50)
         loss: list | function
             To-be-optimized loss function (or list of functions per level) 
             (default is CrossEntropyLoss)
@@ -48,21 +49,24 @@ class DeepITSTrainer:
             Evaluation metrics to report during training, provided as dictionary
             with metric name as key and function as value (default is accuracy, 
             balanced acuracy, precision, recall, f1, and mcc).
-        levels: list | mycoai.deep.train.weight_schedules
+        levels: list | mycoai.train.weight_schedules
             Specifies the levels that should be trained (and their weights).
             Can be a list of strings, e.g. ['genus', 'species]. Can also be a 
             list of floats, indicating the weight per level, e.g. [0,0,0,0,1,1].
             Can also be a MycoAI weight schedule object, e.g. 
-            Constant([0,0,0,0,1,1]) (default is ['species']).
+            Constant([0,0,0,0,1,1]) (default is utils.LEVELS).
         warmup_steps: int | NoneType
             When specified, the lr increases linearly for the first warmup_steps 
             then decreases proportionally to 1/sqrt(step_number). Works only for
             models with d_model attribute (BERT/EncoderDecoder) (default is 0).
         label_smoothing: list[float]
-            How much label smoothing should be added per taxonomic level. Per 
-            level, adds a label_smoothing[level] amount of 'noise' to the
-            species that are part of the target label at that level. Must sum up
-            to 1 (default is [0,0,0,0,0,1]).
+            List of six decimals that controls how much label smoothing should 
+            be added per taxonomic level. The sixth element of this list  refers
+            to the amount of weight that is divided uniformly over all classes. 
+            Hence, [0,0,0,0,0,0.1] corresponds to standard label smoothing with 
+            epsilon=0.1, whereas [0.02,02,0.02,0.02,0.02,0] corresponds to 
+            hierarchical label smoothing with epsilon=0.1 (see paper/docs)
+            (default is [0.02,0.02,0.02,0.02,0.02,0]).
         wandb_config: dict
             Extra information to be added to weights and biases config data.
         wandb_name: str
@@ -111,9 +115,9 @@ class DeepITSTrainer:
             scaler = train.DummyScaler() # Does nothing 
 
         # Other configurations
-        log_columns = DeepITSTrainer.wandb_log_columns(metrics, 
+        log_columns = SeqClassTrainer.wandb_log_columns(metrics, 
                                                        (valid_data is not None))
-        wandb_run = DeepITSTrainer.wandb_init(train_data, valid_data, model, 
+        wandb_run = SeqClassTrainer.wandb_init(train_data, valid_data, model, 
             optimizer, weight_schedule, sampler, loss, batch_size, epochs, 
             warmup_steps, label_smoothing, wandb_config, wandb_name)
         
@@ -151,9 +155,9 @@ class DeepITSTrainer:
                 
             # Validation results
             if valid_data is not None:
-                scores = DeepITSTrainer.validate(model, valid_data, metrics)
+                scores = SeqClassTrainer.validate(model, valid_data, metrics)
             else:
-                scores = DeepITSTrainer.validate(model, train_data, metrics)
+                scores = SeqClassTrainer.validate(model, train_data, metrics)
             scores = np.concatenate([[epoch+1], running_loss/len(train_data),
                                      scores])
             wandb_run.log({column: score 
@@ -165,24 +169,24 @@ class DeepITSTrainer:
         wandb_run.config.update({'num_params': params})
         if epochs > 1:
             wandb_run.unwatch(model)
-        # wandb_api = wandb.Api()
-        # wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
-        # model.train_ref = wandb_id
-        # run = wandb_api.run(wandb_id)
-        # history = run.history(pandas=True)
-        # DeepITSTrainer.wandb_learning_curves(wandb_run, history, metrics, 
-        #                                      valid_data is not None)
+        wandb_api = wandb.Api()
+        wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
+        model.train_ref = wandb_id
+        run = wandb_api.run(wandb_id)
+        history = run.history(pandas=True)
+        SeqClassTrainer.wandb_learning_curves(wandb_run, history, metrics, 
+                                             valid_data is not None)
         wandb_run.finish(quiet=True)
         
-        # if utils.VERBOSE > 0:
-        #     print("Training finished, log saved to wandb (see above).")
-        #     print("Final accuracy scores:\n---------------------")
-        #     if valid_data is not None:
-        #         DeepITSTrainer.final_report(history, 'valid')
-        #     else:
-        #         DeepITSTrainer.final_report(history, 'train')
+        if utils.VERBOSE > 0:
+            print("Training finished, log saved to wandb (see above).")
+            print("Final accuracy scores:\n---------------------")
+            if valid_data is not None:
+                SeqClassTrainer.final_report(history, 'valid')
+            else:
+                SeqClassTrainer.final_report(history, 'train')
         
-        return model # , history # NOTE THis affects the training scripts!
+        return model, history
     
     @staticmethod
     def validate(model, data, metrics, ignore_unknowns=True):
@@ -190,7 +194,7 @@ class DeepITSTrainer:
         
         Parameters
         ----------
-        model: DeepITSClassifier
+        model: SeqClassNetwork
             The to-be-validated neural network
         data: TensorData
             Test data
@@ -213,7 +217,7 @@ class DeepITSTrainer:
                     results.append(metrics[m](y_lvl.cpu().numpy(), 
                                                 y_pred_lvl.cpu().numpy()))
         
-        cons = DeepITSTrainer.consistency(y_pred, model.tax_encoder)
+        cons = SeqClassTrainer.consistency(y_pred, model.tax_encoder)
         return np.array(results + cons)
         
     @staticmethod    

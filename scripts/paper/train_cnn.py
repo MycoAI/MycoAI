@@ -1,8 +1,8 @@
 import torch
 from mycoai import utils
-from mycoai.deep.train import DeepITSTrainer
-from mycoai.deep.train.loss import CrossEntropyLoss
-from mycoai.deep.models import ResNet, SimpleCNN, DeepITSClassifier
+from mycoai.train import SeqClassTrainer
+from mycoai.train.loss import CrossEntropyLoss
+from mycoai.modules import ResNet, SimpleCNN, SeqClassNetwork
 from mycoai.data import Data, TensorData
 from mycoai.evaluate import Evaluator
 
@@ -26,13 +26,13 @@ for label_smoothing in smoothing:
 
     arch = SimpleCNN(kernel=5,conv_layers=[5,10],in_channels=1, pool_size=2)
     # arch = ResNet([1,1,1,1], in_channels=1)
-    model = DeepITSClassifier(arch, train.dna_encoder, train.tax_encoder, 
+    model = SeqClassNetwork(arch, train.dna_encoder, train.tax_encoder, 
                               fcn_layers=[256], output=output)
 
     loss = train.weighted_loss(CrossEntropyLoss, strength=0.5)
     optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     try:
-        model = DeepITSTrainer.train(model, train, valid, 50, loss, 
+        model, _ = SeqClassTrainer.train(model, train, valid, 50, loss, 
             levels=[1,1,1,1,1,1], optimizer=optim, 
             label_smoothing=label_smoothing, wandb_name=name)
         
