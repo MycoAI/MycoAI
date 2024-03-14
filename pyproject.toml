@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mycoai-its"
+version = "0.0.4"
+authors = [
+  { name="Luuk Romeijn", email="luukromeijn@hotmail.nl" },
+]
+description = "(Fungal ITS) DNA barcode classification with neural networks."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+  "numpy",
+  "pandas", 
+  "plotly~=5.17.0",
+  "torch>=1.12.0",
+  "matplotlib",
+  "scikit-learn~=1.3.0",
+  "scipy", 
+  "sentencepiece~=0.1.99",
+  "tqdm", 
+  "wandb~=0.15.12",
+  "biopython>=1.79"
+]
+
+[project.urls]
+Homepage = "https://github.com/MycoAI/MycoAI"
+Issues = "https://github.com/MycoAI/MycoAI/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mycoai"]
+
+[project.scripts]
+mycoai-classify = "mycoai.scripts.classify:main"
+mycoai-evaluate = "mycoai.scripts.evaluate:main"
+mycoai-map = "mycoai.scripts.map:main"
+mycoai-train = "mycoai.scripts.train:main"

@@ -52,9 +52,10 @@ def map(fasta_filepath, output_filepath=utils.OUTPUT_DIR + 'map.html',
     figure.write_html(output_filepath, auto_play=False)
     print(f"Mapping saved to {output_filepath}.")
 
-if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(prog='python -m scripts.map',
+def main():
+
+    parser = argparse.ArgumentParser(prog='python -m mycoai.scripts.map',
         description='Creates a 2D visualization of the final layer of the \
             network, serving as a taxonomic map.')
     
@@ -98,4 +99,8 @@ if __name__ == '__main__':
     map(args.fasta_filepath, args.out[0], args.classification[0], 
         args.context[0], args.model[0], args.device[0])
 
+
+if __name__ == '__main__':
+
+    main()
 

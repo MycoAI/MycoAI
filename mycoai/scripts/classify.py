@@ -11,10 +11,11 @@ def classify(fasta_filepath, output_filepath=utils.OUTPUT_DIR+'prediction.csv',
     prediction = deep_its_model.classify(fasta_filepath)
     prediction.to_csv(output_filepath)
     print(f"Classification saved to {output_filepath}")
+    
 
-if __name__ == '__main__':
+def main():
 
-    parser = argparse.ArgumentParser(prog='python -m scripts.classify',
+    parser = argparse.ArgumentParser(prog='python -m mycoai.scripts.classify',
         description='Taxonomic classification of fungal ITS sequences using a\
             deep neural network.')
     
@@ -44,3 +45,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     classify(args.fasta_filepath, output_filepath=args.out[0], 
              model=args.model[0], device=args.device[0])
+
+
+if __name__ == '__main__':
+
+    main()

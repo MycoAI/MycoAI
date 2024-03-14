@@ -7,11 +7,11 @@ be downloaded from https://github.com/MycoAI/MycoAI/tree/aed05bbff79608ff0cbcc21
 import torch
 from mycoai import utils
 from mycoai.modules import SeqClassNetwork
-from mycoai.modules import BERT
+from mycoai.modules import BERT, SimpleCNN
 
 # Update this variable for desired model
-old_model_path = '/data/luuk/models/MycoAI-multi LS 0.0 0.0 0.0 0.0 0.0 0.1.pt'
-new_model_path = '/data/luuk/models/MycoAI-multi-LS.pt'
+old_model_path = '/data/luuk/models/MycoAI-Vu-CNN LS 0.02 0.02 0.02 0.02 0.02 0.0.pt'
+new_model_path = '/data/luuk/models/MycoAI-CNN-HLS.pt'
 
 # Load as DeepITSClassifier object and extract information
 model = torch.load(old_model_path, map_location=utils.DEVICE)
@@ -25,6 +25,8 @@ if base_arch_type == 'BERT': # ... so we must reinitialize them
         config['dna_encoder_vocab_size'], config['base_arch_d_model'],
         config['base_arch_d_ff'], config['base_arch_h'], config['base_arch_N']
     )
+elif base_arch_type == 'SimpleCNN':
+    arch = SimpleCNN(conv_layers=config['base_arch_layers'])
 else:
     raise RuntimeError('Please initialize the desired architecture here.')
 

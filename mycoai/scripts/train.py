@@ -57,9 +57,9 @@ def train(fasta_filepath, output_filepath=utils.OUTPUT_DIR + 'model.pt',
     print(f"Model saved to {output_filepath}.")
 
 
-if __name__ == '__main__':
+def main():
 
-    parser = argparse.ArgumentParser(prog='python -m scripts.train',
+    parser = argparse.ArgumentParser(prog='python -m mycoai.scripts.train',
         description='Trains a deep neural network for taxonomic classification \
             of fungal ITS sequences.')
     
@@ -142,3 +142,8 @@ if __name__ == '__main__':
           args.output_type[0], not args.no_hls, args.levels, args.epochs[0], 
           args.batch_size[0], args.valid_split[0], args.learning_rate[0], 
           args.weighted_loss[0], args.device[0])
+    
+
+if __name__ == '__main__':
+
+    main()

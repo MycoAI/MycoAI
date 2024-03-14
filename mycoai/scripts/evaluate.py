@@ -21,9 +21,9 @@ def evaluate(classification, reference,
     print(f'Results saved to {output_filepath} and visualized on W&B (link).')
     
 
-if __name__ == '__main__':
+def main():
 
-    parser = argparse.ArgumentParser(prog='python -m scripts.evaluate',
+    parser = argparse.ArgumentParser(prog='python -m mycoai.scripts.evaluate',
         description='Evaluates predicted classification of fungal ITS \
             sequences.')
  
@@ -41,3 +41,8 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     evaluate(args.classification, args.reference)
+
+
+if __name__ == '__main__':
+
+    main()

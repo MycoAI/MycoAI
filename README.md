@@ -1,3 +1,5 @@
+<img alt="PyPI - Version" src="https://img.shields.io/pypi/v/mycoai-its">
+
 # About MycoAI
 Welcome! MycoAI is a Python package that implements deep learning models for the
 classification of (fungal ITS) barcode sequences. Our most sophisticated model
@@ -15,13 +17,19 @@ In short, the package allows users to:
 - **Classify** their own fungal ITS datasets.
 - **Train** neural networks for the taxonomic classification of biological 
 sequences.
+- **Evaluate** taxonomic classifiers in a standardized environment.
 
 ## Contact
 Questions can be directed to 
 [Luuk Romeijn](mailto:l.romeijn@umail.leidenuniv.nl).
 
 # Installation
-Currently, the only way of using MycoAI is from source:
+MycoAI can be installed via pip:
+
+    pip install mycoai-its
+
+## Installing from source
+Alternatively, developers can download MycoAI from source:
     
     git clone https://github.com/MycoAI/MycoAI
 
@@ -50,13 +58,13 @@ A Graphical Processing Unit (GPU) is not required but will speed up training and
 classification significantly. 
 
 # Getting started
-We provide single-command scripts to:
-- [Classify](#classification) your own fungal ITS dataset.
-- [Evaluate](#evaluation) MycoAI's performance with your own labelled 
-dataset.
-- [Map](#taxonomic-mapping) your own ITS sequences onto MycoAI's taxonomic 
-map.
-- [Train](#training) a new neural network with your own dataset.
+We provide the following single-command scripts:
+- [`mycoai-classify`](#classification): Classify your own fungal ITS dataset.
+- [`mycoai-evaluate`](#evaluation) Evaluate MycoAI's performance with your own 
+labelled dataset.
+- [`mycoai-map`](#taxonomic-mapping) Map your own ITS sequences onto MycoAI's 
+taxonomic map.
+- [`mycoai-train`](#training) Train a new neural network with your own dataset.
 
 An example of how to use the scripts is given 
 [here](https://api.wandb.ai/links/mycoai/16ap85ig). 
@@ -64,7 +72,8 @@ An example of how to use the scripts is given
 If you find the functionalitiy of these scripts to be too limited for your
 needs, we highly encourage you to write your own scripts using the available 
 modules. MycoAI was made to be modular and easily integrated into other 
-projects. The package is documented [below](#the-mycoai-package).
+projects, such as the example [here](example.py). The package is documented 
+[below](#the-mycoai-package).
 
 ## Weights and Biases
 Your first run of MycoAI will prompt the following Weights and Biases 
@@ -81,7 +90,7 @@ platform, which MycoAI mainly uses for live visualization of results.
 
 # Classification
 
-    python -m scripts.classify <fasta_filepath>
+    mycoai-classify <fasta_filepath>
 
 Taxonomic classification of fungal ITS sequences using a deep neural network.
 Output is written to a .csv file.
@@ -95,7 +104,7 @@ Output is written to a .csv file.
 
 # Evaluation
 
-    python -m scripts.evaluate <classification> <reference>
+    mycoai-evaluate <classification> <reference>
 
 Evaluates predicted classification of fungal ITS sequences. Results will be 
 printed, graphically displayed on Weights and Biases, and written to a .csv
@@ -109,7 +118,7 @@ file.
 
 # Taxonomic mapping
 
-    python -m scripts.map <fasta_filepath>
+    mycoai-map <fasta_filepath>
 
 Creates a 2D visualization of the final layer of a ITS sequence classification 
 network, serving as a taxonomic map. Output is an .html file which can be
@@ -134,7 +143,7 @@ argument.
 
 # Training
     
-    python -m scripts.train <fasta_filepath>
+    mycoai-train <fasta_filepath>
 
 Trains a deep neural network for taxonomic classification of fungal ITS 
 sequences. Output is a SeqClassNetwork object stored in a .pt file. Training
