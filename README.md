@@ -1,4 +1,4 @@
-<img alt="PyPI - Version" src="https://img.shields.io/pypi/v/mycoai-its">
+<img alt="PyPI - Version" src="https://img.shields.io/pypi/v/mycoai-its?link=https%3A%2F%2Fpypi.org%2Fproject%2Fmycoai-its%2F">
 
 # About MycoAI
 Welcome! MycoAI is a Python package that implements deep learning models for the
