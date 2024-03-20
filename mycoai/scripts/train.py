@@ -85,7 +85,8 @@ def main():
         type=str,
         nargs=1,
         choices=['multi', 'infer_sum'],
-        help="Whether to use the multi-head output or not (default is multi).")
+        help="Whether to use the multi-head or parent inference output. \
+            (default is multi).")
 
     parser.add_argument('--no_hls',
         action='store_true',
