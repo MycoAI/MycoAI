@@ -5,7 +5,8 @@ from mycoai import utils
 
 class SimpleCNN(torch.nn.Module):
     
-    def __init__(self, kernel=5, conv_layers=[5,10], in_channels=1, pool_size=2):
+    def __init__(self, kernel=5, conv_layers=[5,10], in_channels=1, pool_size=2,
+                 batch_normalization=True):
         '''A simple CNN architecture with conv, batchnorm and maxpool layers'''
         super().__init__()
 
@@ -16,7 +17,8 @@ class SimpleCNN(torch.nn.Module):
             conv.append(torch.nn.Conv1d(in_channels, out_channels, kernels[i], 
                                         padding='same'))
             conv.append(torch.nn.ReLU())
-            conv.append(torch.nn.BatchNorm1d(out_channels))
+            if batch_normalization:
+                conv.append(torch.nn.BatchNorm1d(out_channels))
             conv.append(torch.nn.MaxPool1d(pool_size, 1))
             in_channels = out_channels
         self.conv = torch.nn.ModuleList(conv)
