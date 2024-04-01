@@ -6,17 +6,35 @@ from mycoai import utils
 from mycoai.data import Data
 from mycoai.evaluate import Evaluator
 
-utils.WANDB_PROJECT = 'Comparison'
+utils.set_output_dir('/data1/s2592800/')
+utils.WANDB_PROJECT = 'Final Comparison'
 utils.PRED_BATCH_SIZE = 64
 
 model_folder = '/data1/s2592800/models/'
 data_folder = '/data1/s2592800/'
 results_folder = '/data1/s2592800/comparison/deep/'
 
-models = ['MycoAI-multi LS 0.02 0.02 0.02 0.02 0.02 0.0.pt',
-          'MycoAI-multi LS 0.0 0.0 0.0 0.0 0.0 0.1.pt',
-          'MycoAI-single LS 0.02 0.02 0.02 0.02 0.02 0.0.pt',
-          'MycoAI-single LS 0.0 0.0 0.0 0.0 0.0 0.1.pt',]
+models = ['MycoAI-multi-BERT-medium-HLS.pt', # Multi-head BERT, LS variations
+          'MycoAI-multi-BERT-medium-NoLS.pt',
+          'MycoAI-multi-BERT-medium-SLS.pt',
+          'MycoAI-single-BERT-medium-HLS.pt', # Single-head BERT, LS variations
+          'MycoAI-single-BERT-medium-NoLS.pt',
+          'MycoAI-single-BERT-medium-SLS.pt',
+          'MycoAI-multi-CNN-Vu-HLS.pt', # Multi-Head CNN, LS variations
+          'MycoAI-multi-CNN-Vu-NoLS.pt',
+          'MycoAI-multi-CNN-Vu-SLS.pt',
+          'MycoAI-single-CNN-Vu-HLS.pt', # Single-head CNN, LS variations
+          'MycoAI-single-CNN-Vu-NoLS.pt',
+          'MycoAI-single-CNN-Vu-SLS.pt',
+          'MycoAI-multi-CNN-Vu-NoBN-HLS.pt', # Multi-head CNN, arch variations
+          'MycoAI-multi-CNN-ResNet9-HLS.pt',
+          'MycoAI-multi-CNN-ResNet18-HLS.pt',
+          'MycoAI-multi-BERT-small-HLS.pt', # Multi-head BERT, arch variations
+          'MycoAI-multi-BERT-large-HLS.pt',
+          'MycoAI-multi-BERT-medium-4mer-HLS.pt', # Multi-head BERT, encodings
+          'MycoAI-multi-BERT-medium-5mer-HLS.pt',
+          'MycoAI-multi-BERT-medium-6mer-HLS.pt'
+          ]
 
 testsets = ['test1.fasta',
             'test2.fasta',
@@ -63,8 +81,12 @@ for model_name in models:
         del results # , report
         torch.cuda.empty_cache()
 
-models = ['MycoAI-multi LS 0.02 0.02 0.02 0.02 0.02 0.0.pt',
-          'MycoAI-multi LS 0.0 0.0 0.0 0.0 0.0 0.1.pt']
+models = ['MycoAI-multi-BERT-medium-HLS.pt',
+          'MycoAI-multi-BERT-medium-NoLS.pt',
+          'MycoAI-multi-BERT-medium-SLS.pt',
+          'MycoAI-multi-CNN-Vu-HLS.pt',
+          'MycoAI-multi-CNN-Vu-NoLS.pt',
+          'MycoAI-multi-CNN-Vu-SLS.pt']
 
 # Compare hierarchical to standard label smoothing
 for model_name in models:
@@ -85,4 +107,3 @@ for model_name in models:
 
         del model, classification, reference, evaluator, results
         torch.cuda.empty_cache()
-
