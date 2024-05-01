@@ -1,5 +1,4 @@
 ''''For training and testing deep learning models on ITS classification task.'''
-
 import torch
 import wandb
 import numpy as np
@@ -124,7 +123,6 @@ class SeqClassTrainer:
         # TRAINING LOOP
         print("Training classification task...") if utils.VERBOSE > 0 else None
         for epoch in tqdm(range(epochs)):
-
             if epoch == 1: # Can't watch first epoch due to lazy layers
                 wandb_run.watch(model, log='all')
             model.train()
@@ -162,30 +160,34 @@ class SeqClassTrainer:
                                      scores])
             wandb_run.log({column: score 
                            for column, score in zip(log_columns, scores)})
-
+        
         # Finishing the wandb_run, getting results dataframe
         model_parameters = filter(lambda p: p.requires_grad, model.parameters())
         params = sum([np.prod(p.size()) for p in model_parameters])
         wandb_run.config.update({'num_params': params})
+        
         if epochs > 1:
             wandb_run.unwatch(model)
         wandb_api = wandb.Api()
         wandb_id = f'{wandb_run.project}/{wandb_run._run_id}'
         model.train_ref = wandb_id
-        run = wandb_api.run(wandb_id)
-        history = run.history(pandas=True)
-        SeqClassTrainer.wandb_learning_curves(wandb_run, history, metrics, 
-                                             valid_data is not None)
-        wandb_run.finish(quiet=True)
-        
-        if utils.VERBOSE > 0:
-            print("Training finished, log saved to wandb (see above).")
-            print("Final accuracy scores:\n---------------------")
-            if valid_data is not None:
-                SeqClassTrainer.final_report(history, 'valid')
-            else:
-                SeqClassTrainer.final_report(history, 'train')
-        
+        history = None
+        try:
+            run = wandb_api.run(wandb_id)
+            history = run.history(pandas=True)
+            SeqClassTrainer.wandb_learning_curves(wandb_run, history, metrics, 
+                                                      valid_data is not None)
+            wandb_run.finish(quiet=True)
+            
+            if utils.VERBOSE > 0:
+                print("Training finished, log saved to wandb (see above).")
+                print("Final accuracy scores:\n---------------------")
+                if valid_data is not None:
+                    SeqClassTrainer.final_report(history, 'valid')
+                else:
+                    SeqClassTrainer.final_report(history, 'train')
+        except wandb.CommError:
+            pass            
         return model, history
     
     @staticmethod
