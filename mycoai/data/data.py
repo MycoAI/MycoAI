@@ -207,9 +207,12 @@ class Data:
         '''Parses FASTA headers using the UNITE format to extract taxonomies'''
 
         # Retrieving taxonomies
-        fasta_header = fasta_header.split('|')
+        if ' ' in fasta_header:
+            fasta_header = fasta_header.split(' ')
+        else:
+            fasta_header = fasta_header.split('|')
         id = fasta_header[0]
-        taxonomy = fasta_header[1] # Retrieve taxonomy data      
+        taxonomy = fasta_header[1] # Retrieve taxonomy data
         taxonomy, species = taxonomy.split(';s__')
         taxonomy, genus = taxonomy.split(';g__')
         taxonomy, family = taxonomy.split(';f__')
@@ -227,7 +230,9 @@ class Data:
         for i in range(1,7):
             if ((data_row[i][-14:].lower() == 'incertae_sedis') or
                 (data_row[i][:2] == 'GS') or
-                (i == 6 and data_row[i][-3:] == '_sp')): 
+                (i == 6 and data_row[i][-3:] == '_sp') or
+                (data_row[i].lower() == 'unidentified') or 
+                (data_row[i].lower() == '')): 
                     data_row[i] = utils.UNKNOWN_STR
         # Removing extra info on species level
         for addition in ['_subsp\\.', '_var\\.', '_f\\.']:
