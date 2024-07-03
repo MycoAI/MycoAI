@@ -18,7 +18,7 @@ from mycoai import utils
 class BERT(torch.nn.Module):
     '''BERT base model, transformer encoder to be used for various tasks'''
 
-    def __init__(self, vocab_size, d_model=256, d_ff=512, h=8, N=6, dropout=0.1, 
+    def __init__(self, vocab_size, d_model=512, d_ff=1024, h=8, N=6, dropout=0.1, 
                  mode='default'):
         '''Initializes the transformer given the source/target vocabulary.
         
