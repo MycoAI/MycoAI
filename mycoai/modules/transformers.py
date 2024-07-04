@@ -28,15 +28,15 @@ class BERT(torch.nn.Module):
             Number of unique tokens in vocabulary. Can be the vocab_size
             attribute of BytePairEncoder or KmerTokenizer. 
         d_model: int
-            Dimension of sequence repr. (embedding) in model (default is 256)
+            Dimension of sequence repr. (embedding) in model (default is 512)
         d_ff: int
-            Dimension of hidden layer FFN sublayers (default is 512)
+            Dimension of hidden layer FFN sublayers (default is 1024)
         h: int
             Number of heads used for multi-head self-attention (default is 8)
         N: int
-            How many encoder/decoder layers the transformer has (default is 6)
+            How many encoder/decoder layers the transformer has (default is 8)
         dropout: float
-            Dropout probability to use throughout network (default is 0.1)
+            Dropout probability to use throughout network (default is 0.15)
         mode: str
             BERT will use different forward method when mode=='classification'
         '''
