@@ -21,7 +21,7 @@ def map(fasta_filepath, output_filepath=utils.OUTPUT_DIR + 'map.html',
     utils.set_device(device)
 
     # Loading the data and model
-    model = torch.load('models/MycoAI-multi-HLS.pt', map_location=device)
+    model = torch.load(model, map_location=device)
     ref_data = Data(context, allow_duplicates=True)
     data = Data(fasta_filepath, tax_parser=None, allow_duplicates=True)
     if classification is not None:
